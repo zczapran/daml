@@ -5,7 +5,7 @@ load(
 )
 
 cc_library(
-    name = "somelib"
+    name = "somelib",
     hdrs = ["cbits/somelib.h"],
     strip_include_prefix = "cbits",
 )
