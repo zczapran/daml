@@ -47,7 +47,10 @@ load(
 
 c2hs_toolchain(
     name = "c2hs-toolchain",
-    c2hs = "@c2hs//:bin",
+    c2hs = select({
+      "@bazel_tools//src/conditions:windows": "@c2hs//:bin",
+      "//conditions:default": "@haskell_c2hs//:c2hs",
+    }),
 )
 
 filegroup(name = "node_modules", srcs = glob(["node_modules/**/*"]))
