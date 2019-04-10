@@ -48,8 +48,8 @@ load(
 c2hs_toolchain(
     name = "c2hs-toolchain",
     c2hs = select({
-      "@bazel_tools//src/conditions:windows": "@c2hs//:bin",
-      "//conditions:default": "@haskell_c2hs//:c2hs",
+      "@bazel_tools//src/conditions:windows": "@haskell_c2hs//:c2hs",
+      "//conditions:default": "@c2hs//:bin",
     }),
 )
 
