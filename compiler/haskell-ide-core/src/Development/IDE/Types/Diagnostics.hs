@@ -5,10 +5,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE TypeInType #-}
-{-# LANGUAGE InstanceSigs #-}
 module Development.IDE.Types.Diagnostics (
   LSP.Diagnostic(..),
   FileDiagnostics,
@@ -17,6 +13,8 @@ module Development.IDE.Types.Diagnostics (
   LSP.DiagnosticSeverity(..),
   Position(..),
   DiagnosticStore,
+  Diagnostics,
+  getStore,
   DiagnosticRelatedInformation(..),
   List(..),
   StoreItem(..),
@@ -38,7 +36,7 @@ module Development.IDE.Types.Diagnostics (
   dFilePath,
   filePathToUri,
   getDiagnosticsFromStore,
-  getDiagnostics,
+  getAllDiagnostics,
   getFileDiagnostics,
   getStageDiagnostics
   ) where
@@ -48,12 +46,12 @@ import Control.Lens (Lens', lens, set, view)
 import Data.Either.Combinators
 import Data.Maybe as Maybe
 import Data.Foldable
-import Data.Kind
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import Data.SortedList (toSortedList)
 import Data.Text.Prettyprint.Doc.Syntax
 import Data.String (IsString(..))
+import Development.Shake (ShakeValue)
 import qualified Text.PrettyPrint.Annotated.HughesPJClass as Pretty
 import           Language.Haskell.LSP.Types as LSP (
     DiagnosticSeverity(..)
@@ -209,10 +207,10 @@ getDiagnosticsFromStore (StoreItem _ diags) =
 
 -- | A wrapper around the lsp diagnostics store, the constraint describes how compilation steps
 --   are represented
-newtype Diagnostics (stages :: Type -> Constraint) = Diagnostics {getStore :: DiagnosticStore}
+newtype Diagnostics stage = Diagnostics {getStore :: DiagnosticStore}
     deriving Show
 
-prettyDiagnostics :: Diagnostics c -> Doc SyntaxClass
+prettyDiagnostics :: Diagnostics stage -> Doc SyntaxClass
 prettyDiagnostics (Diagnostics ds) =
     label_ "Compiler errors in" $ vcat $ concatMap fileErrors storeContents where
 
@@ -238,18 +236,18 @@ prettyDiagnostics (Diagnostics ds) =
     getDiags :: DiagnosticsBySource -> [(T.Text, [LSP.Diagnostic])]
     getDiags = map (\(ds, diag) -> (fromMaybe dontKnow ds, toList diag)) . Map.assocs
 
-emptyDiagnostics ::  Diagnostics c
+emptyDiagnostics :: Diagnostics stage
 emptyDiagnostics = Diagnostics mempty
 
 -- | Sets the diagnostics for a file and compilation step
 --   if you want to clear the diagnostics call this with an empty list
 setDiagnostics ::
-  (Show stage, c stage) =>
+  Show stage =>
   FilePath ->
   stage ->
   [LSP.Diagnostic] ->
-  Diagnostics c ->
-  Diagnostics c
+  Diagnostics stage ->
+  Diagnostics stage
 setDiagnostics fp stage diags (Diagnostics ds) =
     Diagnostics $ Map.insert uri addedStage ds where
 
@@ -271,15 +269,15 @@ setDiagnostics fp stage diags (Diagnostics ds) =
     k = Just $ T.pack $ show stage
     v = toSortedList diags
 
-getDiagnostics ::
-    Diagnostics c ->
+getAllDiagnostics ::
+    Diagnostics stage ->
     [LSP.Diagnostic]
-getDiagnostics =
+getAllDiagnostics =
     concatMap getDiagnosticsFromStore . Map.elems . getStore
 
 getFileDiagnostics ::
     FilePath ->
-    Diagnostics c ->
+    Diagnostics stage ->
     [LSP.Diagnostic]
 getFileDiagnostics fp =
     fromMaybe [] .
@@ -288,13 +286,12 @@ getFileDiagnostics fp =
     getStore
 
 getStageDiagnostics ::
-    (c stage, Show stage) =>
+    ShakeValue stage =>
     FilePath ->
     stage ->
-    Diagnostics c ->
+    Diagnostics stage ->
     [LSP.Diagnostic]
 getStageDiagnostics fp stage (Diagnostics ds) =
     fromMaybe [] $ do
     (StoreItem _ f) <- Map.lookup (filePathToUri fp) ds
     toList <$> Map.lookup (Just $ T.pack $ show stage) f
-

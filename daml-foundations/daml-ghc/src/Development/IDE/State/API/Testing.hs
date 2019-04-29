@@ -199,7 +199,7 @@ getDiagnostics = ShakeTest $ do
     service <- Reader.asks steService
     liftIO $ do
         void $ API.runActions service []
-        API.getDiagnostics service
+        D.getAllDiagnostics <$> API.getDiagnostics service
 
 -- | Everything that rebuilt in the last execution must pass the predicate
 expectLastRebuilt :: Partial => (String -> FilePath -> Bool) -> ShakeTest ()

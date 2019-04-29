@@ -28,7 +28,6 @@ import Data.Maybe
 import           Data.Set                                 (Set)
 import qualified Data.Set                                 as Set
 import qualified Data.Text as T
-import           Development.IDE.Functions.GHCError
 import           Development.Shake                        hiding (Diagnostic, Env, newCache)
 import           Development.IDE.Types.LSP as Compiler
 
@@ -58,9 +57,6 @@ mkEnv options = do
         , envOfInterestVar = ofInterestVar
         , envUniqSupplyVar = uniqSupplyVar
         }
-
-getDiagnostics :: IdeState -> IO [Diagnostic]
-getDiagnostics = getAllDiagnostics
 
 unsafeClearDiagnostics :: IdeState -> IO ()
 unsafeClearDiagnostics = unsafeClearAllDiagnostics
