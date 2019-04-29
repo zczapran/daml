@@ -5,6 +5,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeInType #-}
+{-# LANGUAGE InstanceSigs #-}
 module Development.IDE.Types.Diagnostics (
   LSP.Diagnostic(..),
   FileDiagnostics,
@@ -26,14 +30,17 @@ module Development.IDE.Types.Diagnostics (
   ideTryIOException,
   prettyFileDiagnostics,
   prettyDiagnostic,
-  prettyDiagnosticStore,
+  prettyDiagnostics,
   defDiagnostic,
-  addDiagnostics,
-  filterSeriousErrors,
+  setDiagnostics,
+  emptyDiagnostics,
   dLocation,
   dFilePath,
   filePathToUri,
-  getDiagnosticsFromStore
+  getDiagnosticsFromStore,
+  getDiagnostics,
+  getFileDiagnostics,
+  getStageDiagnostics
   ) where
 
 import Control.Exception
@@ -41,8 +48,10 @@ import Control.Lens (Lens', lens, set, view)
 import Data.Either.Combinators
 import Data.Maybe as Maybe
 import Data.Foldable
+import Data.Kind
 import qualified Data.Map as Map
 import qualified Data.Text as T
+import Data.SortedList (toSortedList)
 import Data.Text.Prettyprint.Doc.Syntax
 import Data.String (IsString(..))
 import qualified Text.PrettyPrint.Annotated.HughesPJClass as Pretty
@@ -126,28 +135,6 @@ dLocation = lens g s where
         Just (List xs) -> error $ "Diagnostic created, expected 1 related information but got" <> show xs
         Nothing -> Nothing
 
-filterSeriousErrors ::
-    FilePath ->
-    [LSP.Diagnostic] ->
-    [LSP.Diagnostic]
-filterSeriousErrors fp =
-    filter (maybe False hasSeriousErrors . LSP._relatedInformation)
-    where
-        hasSeriousErrors :: List DiagnosticRelatedInformation -> Bool
-        hasSeriousErrors (List a) = any ((/=) uri . _uri . _location) a
-        uri = LSP.filePathToUri fp
-
-addDiagnostics ::
-  FilePath ->
-  [LSP.Diagnostic] ->
-  DiagnosticStore -> DiagnosticStore
-addDiagnostics fp diags ds =
-    updateDiagnostics
-    ds
-    (LSP.filePathToUri fp)
-    Nothing $
-    partitionBySource diags
-
 ideTryIOException :: FilePath -> IO a -> IO (Either LSP.Diagnostic a)
 ideTryIOException fp act =
   mapLeft (\(e :: IOException) -> ideErrorText fp $ T.pack $ show e) <$> try act
@@ -195,27 +182,12 @@ prettyDiagnostic LSP.Diagnostic{..} =
     where
         sev = fromMaybe LSP.DsError _severity
 
-prettyDiagnosticStore :: DiagnosticStore -> Doc SyntaxClass
-prettyDiagnosticStore ds =
-    vcat $
-    map prettyFileDiagnostics $
-    Map.assocs $
-    Map.map getDiagnosticsFromStore ds
-
 prettyFileDiagnostics :: FileDiagnostics -> Doc SyntaxClass
 prettyFileDiagnostics (uri, diags) =
     label_ "Compiler error in" $ vcat
         [ label_ "File:" $ pretty filePath
         , label_ "Errors:" $ vcat $ map prettyDiagnostic diags
         ] where
-
-    -- prettyFileDiags :: (FilePath, [(T.Text, [LSP.Diagnostic])]) -> Doc SyntaxClass
-    -- prettyFileDiags (fp,stages) =
-    --     label_ ("File: "<>fp) $ vcat $ map prettyStage stages
-
-    -- prettyStage :: (T.Text, [LSP.Diagnostic]) -> Doc SyntaxClass
-    -- prettyStage (stage,diags) =
-    --     label_ ("Stage: "<>T.unpack stage) $ vcat $ map prettyDiagnostic diags
 
     filePath :: FilePath
     filePath = fromMaybe dontKnow $ uriToFilePath uri
@@ -234,3 +206,95 @@ prettyFileDiagnostics (uri, diags) =
 getDiagnosticsFromStore :: StoreItem -> [Diagnostic]
 getDiagnosticsFromStore (StoreItem _ diags) =
     toList =<< Map.elems diags
+
+-- | A wrapper around the lsp diagnostics store, the constraint describes how compilation steps
+--   are represented
+newtype Diagnostics (stages :: Type -> Constraint) = Diagnostics {getStore :: DiagnosticStore}
+    deriving Show
+
+prettyDiagnostics :: Diagnostics c -> Doc SyntaxClass
+prettyDiagnostics (Diagnostics ds) =
+    label_ "Compiler errors in" $ vcat $ concatMap fileErrors storeContents where
+
+    fileErrors :: (FilePath, [(T.Text, [LSP.Diagnostic])]) -> [Doc SyntaxClass]
+    fileErrors (filePath, stages) =
+        [ label_ "File:" $ pretty filePath
+        , label_ "Errors:" $ vcat $ map prettyStage stages
+        ]
+
+    prettyStage :: (T.Text, [LSP.Diagnostic]) -> Doc SyntaxClass
+    prettyStage (stage,diags) =
+        label_ ("Stage: "<>T.unpack stage) $ vcat $ map prettyDiagnostic diags
+
+    storeContents ::
+        [(FilePath, [(T.Text, [LSP.Diagnostic])])]
+        -- ^ Source File, Stage Source, Diags
+    storeContents =
+        map (\(uri, (StoreItem _ si)) -> (fromMaybe dontKnow $ uriToFilePath uri, getDiags si)) $ Map.assocs ds
+
+    dontKnow :: IsString s => s
+    dontKnow = "<unknown>"
+
+    getDiags :: DiagnosticsBySource -> [(T.Text, [LSP.Diagnostic])]
+    getDiags = map (\(ds, diag) -> (fromMaybe dontKnow ds, toList diag)) . Map.assocs
+
+emptyDiagnostics ::  Diagnostics c
+emptyDiagnostics = Diagnostics mempty
+
+-- | Sets the diagnostics for a file and compilation step
+--   if you want to clear the diagnostics call this with an empty list
+setDiagnostics ::
+  (Show stage, c stage) =>
+  FilePath ->
+  stage ->
+  [LSP.Diagnostic] ->
+  Diagnostics c ->
+  Diagnostics c
+setDiagnostics fp stage diags (Diagnostics ds) =
+    Diagnostics $ Map.insert uri addedStage ds where
+
+    uri = filePathToUri fp
+
+    addedStage :: StoreItem
+    addedStage = StoreItem Nothing $ storeItem thisFile
+
+    thisFile = Map.lookup uri ds
+
+    storeItem :: Maybe StoreItem -> DiagnosticsBySource
+    storeItem = \case
+        Just (StoreItem Nothing bySource) ->
+            Map.insert k v bySource
+        Nothing ->
+            Map.singleton k v
+        Just (StoreItem (Just _) _) ->
+            error "Unsupported use of document versions"
+    k = Just $ T.pack $ show stage
+    v = toSortedList diags
+
+getDiagnostics ::
+    Diagnostics c ->
+    [LSP.Diagnostic]
+getDiagnostics =
+    concatMap getDiagnosticsFromStore . Map.elems . getStore
+
+getFileDiagnostics ::
+    FilePath ->
+    Diagnostics c ->
+    [LSP.Diagnostic]
+getFileDiagnostics fp =
+    fromMaybe [] .
+    fmap getDiagnosticsFromStore .
+    Map.lookup (filePathToUri fp) .
+    getStore
+
+getStageDiagnostics ::
+    (c stage, Show stage) =>
+    FilePath ->
+    stage ->
+    Diagnostics c ->
+    [LSP.Diagnostic]
+getStageDiagnostics fp stage (Diagnostics ds) =
+    fromMaybe [] $ do
+    (StoreItem _ f) <- Map.lookup (filePathToUri fp) ds
+    toList <$> Map.lookup (Just $ T.pack $ show stage) f
+
