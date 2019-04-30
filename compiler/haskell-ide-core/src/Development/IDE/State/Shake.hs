@@ -259,9 +259,9 @@ useStale IdeState{shakeExtras=ShakeExtras{state}} k fp =
     join <$> getValues state k fp
 
 
-getDiagnostics :: IdeState -> IO (Diagnostics Key)
+getDiagnostics :: IdeState -> IO [Diagnostic]
 getDiagnostics IdeState{shakeExtras = ShakeExtras{diagnostics}} =
-    readVar diagnostics
+    getAllDiagnostics <$> readVar diagnostics
 
 -- | FIXME: This function is temporary! Only required because the files of interest doesn't work
 unsafeClearAllDiagnostics :: IdeState -> IO ()
