@@ -228,7 +228,7 @@ prettyDiagnostics (Diagnostics ds) =
         [(FilePath, [(T.Text, [LSP.Diagnostic])])]
         -- ^ Source File, Stage Source, Diags
     storeContents =
-        map (\(uri, (StoreItem _ si)) -> (fromMaybe dontKnow $ uriToFilePath uri, getDiags si)) $ Map.assocs ds
+        map (\(uri, StoreItem _ si) -> (fromMaybe dontKnow $ uriToFilePath uri, getDiags si)) $ Map.assocs ds
 
     dontKnow :: IsString s => s
     dontKnow = "<unknown>"
@@ -280,8 +280,7 @@ getFileDiagnostics ::
     Diagnostics stage ->
     [LSP.Diagnostic]
 getFileDiagnostics fp =
-    fromMaybe [] .
-    fmap getDiagnosticsFromStore .
+    maybe [] getDiagnosticsFromStore .
     Map.lookup (filePathToUri fp) .
     getStore
 
