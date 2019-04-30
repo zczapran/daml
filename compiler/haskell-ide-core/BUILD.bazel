@@ -27,6 +27,7 @@ da_haskell_library(
         "pretty",
         "safe-exceptions",
         "shake",
+        "sorted-list",
         "stm",
         "syb",
         "text",
