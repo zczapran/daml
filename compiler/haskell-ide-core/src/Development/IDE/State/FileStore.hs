@@ -29,7 +29,6 @@ import qualified Data.ByteString.Char8 as BS
 import Development.IDE.Types.Diagnostics
 import           Data.Time
 
-
 -- This module stores the changed files in memory, and answers file system questions
 -- from either the memory changes OR the file system itself
 
@@ -93,7 +92,7 @@ getModificationTimeRule dirty =
                 Just (time, _) -> return time
                 Nothing -> Dir.getModificationTime file
         case res of
-            Left err -> return (Nothing, ([err], Nothing))
+            Left err -> return (Nothing, (getAllDiagnostics err, Nothing))
             Right time -> return (Just $ BS.pack $ showTimePrecise time, ([], Just time))
 
 
@@ -108,7 +107,7 @@ getFileContentsRule dirty =
                 Just (_, contents) -> return contents
                 Nothing -> hGetStringBuffer file
         case res of
-            Left err -> return ([err], Nothing)
+            Left err -> return (getAllDiagnostics err, Nothing)
             Right contents -> return ([], Just (time, contents))
 
 

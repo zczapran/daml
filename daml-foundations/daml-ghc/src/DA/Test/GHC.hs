@@ -45,6 +45,7 @@ import           Data.List.Extra
 import Data.IORef
 import Data.Proxy
 import           Development.IDE.Types.Diagnostics
+import           Development.IDE.State.Shake
 import           Data.Maybe
 import           Development.Shake hiding (cmd, withResource)
 import           System.Directory.Extra
@@ -117,7 +118,7 @@ getIntegrationTests registerTODO scenarioService version = do
 
     -- test files are declared as data in BUILD.bazel and are copied over relative to the current run file tree
     -- this is equivalent to PWD env variable
-    files1 <- take 3 <$> filter (".daml" `isExtensionOf`) <$> listFiles "daml-foundations/daml-ghc/tests"
+    files1 <- filter (".daml" `isExtensionOf`) <$> listFiles "daml-foundations/daml-ghc/tests"
     let files2 = ["daml-foundations/daml-ghc/bond-trading/Test.daml"] -- only run Test.daml (see https://github.com/digital-asset/daml/issues/726)
     let files = files1 ++ files2
 
@@ -165,7 +166,8 @@ testCase args version getService outdir registerTODO file = singleTest file . Te
       diags <- Compile.getDiagnostics service
       for_ [file ++ ", " ++ x | Todo x <- anns] (registerTODO . TODO)
       resDiag <- checkDiagnostics log [fields | DiagnosticFields fields <- anns] $
-        [ideErrorText "" $ T.pack $ show e | Left e <- [ex], not $ "_IGNORE_" `isInfixOf` show e] ++ diags
+        mconcat
+        [ideErrorText "" $ T.pack $ show e | Left e <- [ex], not $ "_IGNORE_" `isInfixOf` show e] <> diags
       resQueries <- runJqQuery log [(pkg, q) | Right pkg <- [ex], QueryLF q <- anns]
       let failures = catMaybes $ resDiag : resQueries
       case failures of
@@ -198,19 +200,20 @@ data DiagnosticField
   | DMessage !String
   deriving (Eq, Show)
 
-checkDiagnostics :: (String -> IO ()) -> [[DiagnosticField]] -> [D.Diagnostic] -> IO (Maybe String)
+checkDiagnostics :: (String -> IO ()) -> [[DiagnosticField]] -> Diagnostics Key -> IO (Maybe String)
 checkDiagnostics log expected got = do
-    when (got /= []) $
-        log $ T.unpack $ Pretty.renderPlain $ Pretty.vcat $ map prettyDiagnostic got
+    let allGot = getAllDiagnostics got
+    when (allGot /= []) $
+        log $ T.unpack $ Pretty.renderPlain $ prettyDiagnostics got
 
     -- you require the same number of diagnostics as expected
     -- and each diagnostic is at least partially expected
     let bad = filter
-            (\expFields -> not $ any (\diag -> all (checkField diag) expFields) got)
+            (\expFields -> not $ any (\diag -> all (checkField diag) expFields) allGot)
             expected
     pure $ if
-      | length expected /= length got ->
-            Just $ "Wrong number of diagnostics, expected " ++ show (length expected) ++ " but found " ++ show (length got)
+      | length expected /= length allGot ->
+            Just $ "Wrong number of diagnostics, expected " ++ show (length expected) ++ " but found " ++ show (prettyDiagnostics got)
       | null bad -> Nothing
       | otherwise -> Just $ unlines ("Could not find matching diagnostics:" : map show bad)
     where checkField :: D.Diagnostic -> DiagnosticField -> Bool

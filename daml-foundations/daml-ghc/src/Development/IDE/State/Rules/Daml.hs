@@ -97,11 +97,11 @@ generateDalfRule =
         let rawDalf = LF.simplifyModule unsimplifiedRawDalf
         lift $ setPriority PriorityGenerateDalf
 
-        dalf <- withExceptT (pure . ideErrorPretty file)
+        dalf <- withExceptT (getAllDiagnostics . ideErrorPretty file)
           $ liftEither
           $ Serializability.inferModule world rawDalf
 
-        withExceptT (pure . ideErrorPretty file)
+        withExceptT (getAllDiagnostics . ideErrorPretty file)
           $ liftEither
           $ LF.checkModule world lfVersion dalf
 
@@ -111,7 +111,7 @@ generateDalfRule =
 -- filename to match the package name.
 -- TODO (drsk): We might want to change this to load only needed packages in the future.
 generatePackageMap ::
-     [FilePath] -> IO ([Diagnostic], Map.Map UnitId (LF.PackageId, LF.Package, BS.ByteString, FilePath))
+     [FilePath] -> IO (Diagnostics Key, Map.Map UnitId (LF.PackageId, LF.Package, BS.ByteString, FilePath))
 generatePackageMap fps = do
   (diags, pkgs) <-
     fmap (partitionEithers . concat) $
@@ -126,7 +126,7 @@ generatePackageMap fps = do
             Archive.decodeArchive dalfBS
           let unitId = stringToUnitId $ dropExtension $ takeFileName dalf
           Right (unitId, (pkgId, package, dalfBS, dalf))
-  return (diags, Map.fromList pkgs)
+  return (mconcat diags, Map.fromList pkgs)
 
 generatePackageMapRule :: Rules ()
 generatePackageMapRule =
@@ -134,7 +134,7 @@ generatePackageMapRule =
         env <- getServiceEnv
         (errs, res) <-
             liftIO $ generatePackageMap (optPackageDbs $ envOptions env)
-        when (errs /= []) $
+        when (getAllDiagnostics errs /= []) $
             reportSeriousError $
             "Rule GeneratePackageMap generated errors " ++ show errs
         return res

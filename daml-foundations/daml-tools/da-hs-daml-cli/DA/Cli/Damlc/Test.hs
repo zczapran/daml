@@ -48,7 +48,7 @@ execTest inFiles color mbJUnitOutput cliOptions = do
         let lfVersion = Compiler.optDamlLfVersion cliOptions
         testRun h inFiles lfVersion color mbJUnitOutput
         diags <- CompilerService.getDiagnostics h
-        when (any ((Just DsError ==) . _severity) diags) exitFailure
+        when (any ((Just DsError ==) . _severity) $ getAllDiagnostics diags) exitFailure
 
 
 testRun :: IdeState -> [FilePath] -> LF.Version -> UseColor -> Maybe FilePath -> IO ()
@@ -83,7 +83,7 @@ failedTestOutput :: IdeState -> FilePath -> CompilerService.Action [(VirtualReso
 failedTestOutput h file = do
     mbScenarioNames <- CompilerService.getScenarioNames file
     diagnostics <- liftIO $ CompilerService.getDiagnostics h
-    let errMsg = T.unlines (map (Pretty.renderPlain . prettyDiagnostic) diagnostics)
+    let errMsg =  Pretty.renderPlain $ prettyDiagnostics diagnostics
     pure $ map (, Just errMsg) $ fromMaybe [VRScenario file "Unknown"] mbScenarioNames
 
 

@@ -24,7 +24,7 @@
 --   useStale.
 module Development.IDE.State.Shake(
     IdeState,
-    IdeRule, IdeResult,
+    IdeRule, IdeResult, Key,
     shakeOpen, shakeShut,
     shakeRun,
     shakeProfile,
@@ -42,6 +42,9 @@ module Development.IDE.State.Shake(
     shakeLogInfo,
     shakeLogWarning,
     shakeLogError,
+    ideTryIOException,
+    ideErrorPretty,
+    ideErrorText
     ) where
 
 import           Development.Shake
@@ -53,8 +56,10 @@ import qualified Data.ByteString.Char8 as BS
 import           Data.Dynamic
 import           Data.Maybe
 import           Data.Either
+import           Data.Either.Extra (mapLeft)
 import           Data.List.Extra
 import qualified Data.Text as T
+import qualified Text.PrettyPrint.Annotated.HughesPJClass as Pretty
 import Development.IDE.Logger as Logger
 import Development.IDE.Types.LSP
 import           Development.IDE.Types.Diagnostics
@@ -257,9 +262,9 @@ useStale IdeState{shakeExtras=ShakeExtras{state}} k fp =
     join <$> getValues state k fp
 
 
-getDiagnostics :: IdeState -> IO [Diagnostic]
+getDiagnostics :: IdeState -> IO (Diagnostics Key)
 getDiagnostics IdeState{shakeExtras = ShakeExtras{diagnostics}} =
-    getAllDiagnostics <$> readVar diagnostics
+    readVar diagnostics
 
 -- | FIXME: This function is temporary! Only required because the files of interest doesn't work
 unsafeClearAllDiagnostics :: IdeState -> IO ()
@@ -357,7 +362,7 @@ defineEarlyCutoff op = addBuiltinRule noLint noIdentity $ \(Q (key, file)) old m
         Nothing -> do
             (bs, res) <- actionCatch
                 (do v <- op key file; liftIO $ evaluate $ force v) $
-                \(e :: SomeException) -> pure (Nothing, ([ideErrorText file $ T.pack $ show e | not $ isBadDependency e],Nothing))
+                \(e :: SomeException) -> pure (Nothing, (nubDiags [ideErrorText file $ T.pack $ show e | not $ isBadDependency e],Nothing))
             (ds, res) <- return $ first (map $ set dFilePath $ Just file) res
 
             liftIO $ setValues state key file res
@@ -372,6 +377,7 @@ defineEarlyCutoff op = addBuiltinRule noLint noIdentity $ \(Q (key, file)) old m
     where
         wrap = maybe BS.empty (BS.cons '_')
         unwrap x = if BS.null x then Nothing else Just $ BS.tail x
+        nubDiags = getAllDiagnostics . mconcat
 
 
 updateFileDiagnostics ::
@@ -408,3 +414,17 @@ shakeLogDebug = sl logDebug
 shakeLogInfo = sl logInfo
 shakeLogWarning = sl logWarning
 shakeLogError = sl logError
+
+-- IDE Errors
+ideError :: Key
+ideError = Key ("Ide Error" :: T.Text)
+
+ideErrorText :: FilePath -> T.Text -> Diagnostics Key
+ideErrorText fp = errorDiag fp ideError
+
+ideErrorPretty :: Pretty.Pretty e => FilePath -> e -> Diagnostics Key
+ideErrorPretty fp = ideErrorText fp . T.pack . Pretty.prettyShow
+
+ideTryIOException :: FilePath -> IO a -> IO (Either (Diagnostics Key) a)
+ideTryIOException fp act =
+  mapLeft (\(e :: IOException) -> ideErrorText fp $ T.pack $ show e) <$> try act

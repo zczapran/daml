@@ -22,10 +22,7 @@ module Development.IDE.Types.Diagnostics (
   noLocation,
   noRange,
   noFilePath,
-  ideErrorText,
-  ideErrorPretty,
   errorDiag,
-  ideTryIOException,
   prettyFileDiagnostics,
   prettyDiagnostic,
   prettyDiagnostics,
@@ -40,21 +37,21 @@ module Development.IDE.Types.Diagnostics (
   getAllDiagnostics,
   getFileDiagnostics,
   getStageDiagnostics,
-  filterDiagnostics
+  filterDiagnostics,
+  removeEmptyStages
   ) where
 
-import Control.Exception
 import Control.Lens (Lens', lens, set, view)
-import Data.Either.Combinators
 import Data.Maybe as Maybe
 import Data.Foldable
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import Data.SortedList (toSortedList)
+import qualified Data.SortedList as SL
 import Data.Text.Prettyprint.Doc.Syntax
 import Data.String (IsString(..))
 import Development.Shake (ShakeValue)
-import qualified Text.PrettyPrint.Annotated.HughesPJClass as Pretty
+import GHC.Stack
 import           Language.Haskell.LSP.Types as LSP (
     DiagnosticSeverity(..)
   , Diagnostic(..)
@@ -68,15 +65,9 @@ import Language.Haskell.LSP.Diagnostics
 
 import Development.IDE.Types.Location
 
-ideErrorText :: FilePath -> T.Text -> LSP.Diagnostic
-ideErrorText fp = errorDiag fp "Ide Error"
-
-ideErrorPretty :: Pretty.Pretty e => FilePath -> e -> LSP.Diagnostic
-ideErrorPretty fp = ideErrorText fp . T.pack . Pretty.prettyShow
-
-errorDiag :: FilePath -> T.Text -> T.Text -> LSP.Diagnostic
-errorDiag fp src =
-  set dFilePath (Just fp) . diagnostic noRange LSP.DsError src
+errorDiag :: Show k => FilePath -> k -> T.Text -> Diagnostics k
+errorDiag fp src msg =
+  setDiagnostics fp src [diagnostic noRange LSP.DsError (T.pack $ show src) msg] emptyDiagnostics
 
 -- | This is for compatibility with our old diagnostic type
 diagnostic :: Range
@@ -134,10 +125,6 @@ dLocation = lens g s where
         Just (List [DiagnosticRelatedInformation loc _]) -> Just loc
         Just (List xs) -> error $ "Diagnostic created, expected 1 related information but got" <> show xs
         Nothing -> Nothing
-
-ideTryIOException :: FilePath -> IO a -> IO (Either LSP.Diagnostic a)
-ideTryIOException fp act =
-  mapLeft (\(e :: IOException) -> ideErrorText fp $ T.pack $ show e) <$> try act
 
 -- | Human readable diagnostics for a specific file.
 --
@@ -212,8 +199,21 @@ getDiagnosticsFromStore (StoreItem _ diags) =
 newtype Diagnostics stage = Diagnostics {getStore :: DiagnosticStore}
     deriving Show
 
+instance Semigroup (Diagnostics stage) where
+    (Diagnostics a) <> (Diagnostics b) =
+        Diagnostics $
+        Map.unionWith (curry combineStores)
+        a b where
+        combineStores = \case
+            (StoreItem Nothing x, StoreItem Nothing y) ->
+                StoreItem Nothing $ Map.unionWith SL.union x y
+            _ -> noVersions
+
+instance Monoid (Diagnostics k) where
+    mempty = emptyDiagnostics
+
 prettyDiagnostics :: Diagnostics stage -> Doc SyntaxClass
-prettyDiagnostics (Diagnostics ds) =
+prettyDiagnostics ds =
     label_ "Compiler errors in" $ vcat $ concatMap fileErrors storeContents where
 
     fileErrors :: (FilePath, [(T.Text, [LSP.Diagnostic])]) -> [Doc SyntaxClass]
@@ -230,7 +230,11 @@ prettyDiagnostics (Diagnostics ds) =
         [(FilePath, [(T.Text, [LSP.Diagnostic])])]
         -- ^ Source File, Stage Source, Diags
     storeContents =
-        map (\(uri, StoreItem _ si) -> (fromMaybe dontKnow $ uriToFilePath uri, getDiags si)) $ Map.assocs ds
+        map (\(uri, StoreItem _ si) ->
+                 (fromMaybe dontKnow $ uriToFilePath uri, getDiags si))
+            $ Map.assocs
+            $ getStore
+            $ removeEmptyStages ds
 
     dontKnow :: IsString s => s
     dontKnow = "<unknown>"
@@ -244,6 +248,7 @@ emptyDiagnostics = Diagnostics mempty
 -- | Sets the diagnostics for a file and compilation step
 --   if you want to clear the diagnostics call this with an empty list
 setDiagnostics ::
+  HasCallStack =>
   Show stage =>
   FilePath ->
   stage ->
@@ -267,9 +272,13 @@ setDiagnostics fp stage diags (Diagnostics ds) =
         Nothing ->
             Map.singleton k v
         Just (StoreItem (Just _) _) ->
-            error "Unsupported use of document versions"
+            noVersions
     k = Just $ T.pack $ show stage
     v = toSortedList diags
+
+noVersions :: HasCallStack => a
+noVersions =
+    error "Unsupported use of document versions"
 
 getAllDiagnostics ::
     Diagnostics stage ->
@@ -304,4 +313,14 @@ filterDiagnostics ::
 filterDiagnostics keep =
     Diagnostics .
     Map.filterWithKey (\file _ -> maybe False keep $ uriToFilePath file) .
+    getStore .
+    removeEmptyStages
+
+removeEmptyStages ::
+    Diagnostics key ->
+    Diagnostics ke
+removeEmptyStages =
+    Diagnostics .
+    Map.filter (not . null . getDiagnosticsFromStore) .
+    Map.map (\(StoreItem s stages) -> StoreItem s $ Map.filter (not . null) stages ) .
     getStore

@@ -74,7 +74,6 @@ type instance RuleResult GetLocatedImports = [(Located ModuleName, Maybe Import)
 -- we can only report diagnostics for the current file.
 type instance RuleResult ReportImportCycles = ()
 
-
 data OfInterest = OfInterest
     deriving (Eq, Show, Typeable, Generic)
 instance Binary   OfInterest

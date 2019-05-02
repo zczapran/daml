@@ -197,8 +197,7 @@ getAssociatedVirtualResources service filePath =
   runDefaultExceptT [] $ logExceptT "GetAssociatedVirtualResources" $ do
     mods <- NM.toList . LF.packageModules <$> compileFile service filePath
     when (null mods) $
-      throwError [errorDiag filePath "Get associated virtual resources"
-        "No modules returned by compiler."]
+      throwError $ Shake.ideErrorText filePath "Get associated virtual resources: No modules returned by compiler."
     -- NOTE(MH): 'compile' returns the modules in topologically sorted order.
     -- Thus, the module we care about is the last in the list.
     let mod0 = last mods
@@ -239,7 +238,7 @@ compileFile
     -- -> Options
     -- -> Bool -- ^ collect and display warnings
     -> FilePath
-    -> ExceptT [Diagnostic] IO LF.Package
+    -> ExceptT (Diagnostics Shake.Key) IO LF.Package
 compileFile service fp = do
     -- We need to mark the file we are compiling as a file of interest.
     -- Otherwise all diagnostics produced during compilation will be garbage
@@ -272,7 +271,7 @@ buildDar ::
   -> String
   -> [(String, BS.ByteString)]
   -> UseDalf
-  -> ExceptT [Diagnostic] IO BS.ByteString
+  -> ExceptT (Diagnostics Shake.Key) IO BS.ByteString
 buildDar service file pkgName dataFiles dalfInput = do
   liftIO $
     CompilerService.logDebug service $
@@ -314,7 +313,7 @@ buildDar service file pkgName dataFiles dalfInput = do
 
 -- | Get the transitive package dependencies on other dalfs.
 getDalfDependencies ::
-       IdeState -> FilePath -> ExceptT [Diagnostic] IO [DalfDependency]
+       IdeState -> FilePath -> ExceptT (Diagnostics Shake.Key) IO [DalfDependency]
 getDalfDependencies service afp = do
     res <-
         liftIO $
