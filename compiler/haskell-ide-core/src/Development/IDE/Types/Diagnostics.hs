@@ -35,10 +35,12 @@ module Development.IDE.Types.Diagnostics (
   dLocation,
   dFilePath,
   filePathToUri,
+  uriToFilePath,
   getDiagnosticsFromStore,
   getAllDiagnostics,
   getFileDiagnostics,
-  getStageDiagnostics
+  getStageDiagnostics,
+  filterDiagnostics
   ) where
 
 import Control.Exception
@@ -294,3 +296,12 @@ getStageDiagnostics fp stage (Diagnostics ds) =
     fromMaybe [] $ do
     (StoreItem _ f) <- Map.lookup (filePathToUri fp) ds
     toList <$> Map.lookup (Just $ T.pack $ show stage) f
+
+filterDiagnostics ::
+    (FilePath -> Bool) ->
+    Diagnostics stage ->
+    Diagnostics stage
+filterDiagnostics keep =
+    Diagnostics .
+    Map.filterWithKey (\file _ -> maybe False keep $ uriToFilePath file) .
+    getStore

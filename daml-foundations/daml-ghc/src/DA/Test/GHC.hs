@@ -117,7 +117,7 @@ getIntegrationTests registerTODO scenarioService version = do
 
     -- test files are declared as data in BUILD.bazel and are copied over relative to the current run file tree
     -- this is equivalent to PWD env variable
-    files1 <- filter (".daml" `isExtensionOf`) <$> listFiles "daml-foundations/daml-ghc/tests"
+    files1 <- take 3 <$> filter (".daml" `isExtensionOf`) <$> listFiles "daml-foundations/daml-ghc/tests"
     let files2 = ["daml-foundations/daml-ghc/bond-trading/Test.daml"] -- only run Test.daml (see https://github.com/digital-asset/daml/issues/726)
     let files = files1 ++ files2
 
@@ -209,7 +209,8 @@ checkDiagnostics log expected got = do
             (\expFields -> not $ any (\diag -> all (checkField diag) expFields) got)
             expected
     pure $ if
-      | length expected /= length got -> Just $ "Wrong number of diagnostics, expected " ++ show (length expected)
+      | length expected /= length got ->
+            Just $ "Wrong number of diagnostics, expected " ++ show (length expected) ++ " but found " ++ show (length got)
       | null bad -> Nothing
       | otherwise -> Just $ unlines ("Could not find matching diagnostics:" : map show bad)
     where checkField :: D.Diagnostic -> DiagnosticField -> Bool
