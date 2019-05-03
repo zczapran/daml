@@ -13,6 +13,7 @@ HEAD — ongoing
 --------------------
 
 - Beta release of the Windows SDK:
+
   You can download the installer from
   `GitHub releases <https://github.com/digital-asset/daml/releases>`_.
   The Windows SDK ships with the new `daml` installer which will soon also
