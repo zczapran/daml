@@ -23,6 +23,8 @@ module DA.Service.Logger.Impl.GCP (
   , sendData
   , dfPath
   , test
+  -- * For log analysis
+  , optOut
   ) where
 
 import GHC.Generics(Generic)
@@ -349,12 +351,14 @@ logOptOut = do
     fp <- fmap (</> ".opted_out") damlDir
     exists <- doesFileExist fp
     env <- initialiseEnv
-    let msg :: T.Text = "Opted out of telemetry"
-    optOut <- createLog env Lgr.Info msg
+    optOut <- createLog env Lgr.Info optOut
     unless exists do
         res <- sendLogs [optOut]
         when (Prelude.null res) $
             writeFile fp ""
+
+optOut :: T.Text
+optOut = "Opted out of telemetry"
 
 -- | Reads the data file but doesn't check the values are valid
 readDF :: UTFBS.ByteString -> Maybe DataFile
