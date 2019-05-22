@@ -1,13 +1,33 @@
 module Main where
 
-import DA.Service.Logger.Impl.GCP
-
 export :: FilePath
 export = "data/export.csv"
 
 data Result =
-    OptOut
+      SessionFinished
+    | SessionStart SessionMeta
+    | OptedOut
 
-getMessage :: Value -> WithSession Result
-getMessage v
-    fromJson v == optOut
+data SessionMeta = SessionMeta
+      { machineID :: T.Text
+      , version :: T.Text
+      , operatingSystem :: T.Text
+      }
+
+data Session = Session
+    { meta :: SessionMeta
+    , start :: TimeStamp
+    , finish :: TimeStamp
+    }
+
+data MessageMeta a = MessageMeta
+    { wmContents :: a
+    , sessionID :: T.Text
+    , timeStamp :: Time
+    }
+
+getMessage :: Value -> [WithSession Result]
+getMessage v = undefined
+
+sessions :: [WithSession Result] -> [Session]
+sessions = undefined
