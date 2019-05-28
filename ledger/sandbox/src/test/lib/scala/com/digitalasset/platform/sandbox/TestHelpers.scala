@@ -24,7 +24,7 @@ import com.digitalasset.platform.services.time.TimeModel
 
 import scala.concurrent.{ExecutionContext, Future}
 import com.digitalasset.ledger.api.domain.LedgerId
-import com.digitalasset.platform.sandbox.damle.SandboxTemplateStore
+import com.digitalasset.platform.sandbox.damle.SandboxPackageStore
 
 object TestDar {
   val dalfFile: File = new File("ledger/sandbox/Test.dar")
@@ -56,7 +56,7 @@ trait TestHelpers {
     val writeService = new SandboxIndexAndWriteService(
       ledger,
       TimeModel.reasonableDefault,
-      SandboxTemplateStore(damlPackageContainer),
+      SandboxPackageStore(damlPackageContainer),
       contractStore
     )
 
