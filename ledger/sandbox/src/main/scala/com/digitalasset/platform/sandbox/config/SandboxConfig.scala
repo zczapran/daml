@@ -23,7 +23,7 @@ final case class TlsServerConfiguration(
 final case class SandboxConfig(
     address: Option[String],
     port: Int,
-    damlPackageContainer: DamlPackageContainer,
+    damlPackages: List[File],
     timeProviderType: TimeProviderType,
     timeModel: TimeModel,
     commandConfig: CommandConfiguration, //TODO: this should go to the file config
@@ -51,7 +51,7 @@ object SandboxConfig {
     SandboxConfig(
       None,
       DefaultPort,
-      DamlPackageContainer(Nil),
+      Nil,
       TimeProviderType.Static,
       TimeModel.reasonableDefault,
       defaultCommandConfig,

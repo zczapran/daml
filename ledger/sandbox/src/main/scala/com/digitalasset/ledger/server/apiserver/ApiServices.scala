@@ -13,12 +13,11 @@ import com.daml.ledger.participant.state.index.v2.{
 }
 import com.daml.ledger.participant.state.v1.WriteService
 import com.digitalasset.api.util.TimeProvider
-import com.digitalasset.daml.lf.data.Ref
 import com.digitalasset.daml.lf.engine._
 import com.digitalasset.grpc.adapter.ExecutionSequencerFactory
 import com.digitalasset.ledger.api.v1.command_completion_service.CompletionEndRequest
 import com.digitalasset.ledger.client.services.commands.CommandSubmissionFlow
-import com.digitalasset.platform.sandbox.config.{SandboxConfig, SandboxContext}
+import com.digitalasset.platform.sandbox.config.SandboxConfig
 import com.digitalasset.platform.sandbox.services._
 import com.digitalasset.platform.sandbox.services.transaction.ApiTransactionService
 import com.digitalasset.platform.sandbox.stores.ledger.CommandExecutorImpl
@@ -79,23 +78,18 @@ object ApiServices {
     val completionsService: IndexCompletionsService = indexService
 
     identityService.getLedgerId().map { ledgerId =>
-      val context = SandboxContext.fromConfig(config)
-
-      val packageResolver =
-        (pkgId: Ref.PackageId) => Future.successful(context.packageContainer.getPackage(pkgId))
-
-      val identifierResolver: IdentifierResolver = new IdentifierResolver(packageResolver)
+      val identifierResolver: IdentifierResolver =
+        new IdentifierResolver(packagesService.getLfPackage)
 
       val apiSubmissionService =
         ApiSubmissionService.create(
           ledgerId,
-          context.packageContainer,
           identifierResolver,
           contractStore,
           writeService,
           config.timeModel,
           timeProvider,
-          new CommandExecutorImpl(engine, context.packageContainer)
+          new CommandExecutorImpl(engine, packagesService.getLfPackage)
         )
 
       logger.info(EngineInfo.show)

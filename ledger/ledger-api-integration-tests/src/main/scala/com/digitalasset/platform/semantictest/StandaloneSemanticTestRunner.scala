@@ -4,19 +4,23 @@
 package com.digitalasset.platform.semantictest
 
 import java.io.{BufferedInputStream, File, FileInputStream}
+import java.util.zip.ZipFile
 
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
+import com.digitalasset.daml.lf.archive.DarReader
 import com.digitalasset.daml.lf.data.Ref.PackageId
 import com.digitalasset.daml.lf.engine.testing.SemanticTester
 import com.digitalasset.daml.lf.lfpackage.{Ast, Decode}
+import com.digitalasset.daml_lf.DamlLf.Archive
 import com.digitalasset.grpc.adapter.AkkaExecutionSequencerPool
 import com.digitalasset.platform.apitesting.{LedgerContext, PlatformChannels, RemoteServerResource}
 import com.digitalasset.platform.common.LedgerIdMode
-import com.digitalasset.platform.sandbox.config.{DamlPackageContainer, SandboxConfig}
+import com.digitalasset.platform.sandbox.config.SandboxConfig
 
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
+import scala.util.Try
 
 object StandaloneSemanticTestRunner {
   def main(args: Array[String]): Unit = {
@@ -30,7 +34,14 @@ object StandaloneSemanticTestRunner {
       .parse(args, defaultConfig)
       .getOrElse(sys.exit(1))
 
-    val packages: Map[PackageId, Ast.Package] = config.packageContainer.packages
+    val packages: Map[PackageId, Ast.Package] = config.darPackage match {
+      case None => Map.empty
+      case Some(dar) =>
+        val reader = DarReader { case (size @ _, x) => Try(Archive.parseFrom(x)) }
+        Map(
+          reader.readArchive(new ZipFile(dar)).get.all.map(Decode.decodeArchive): _*
+        )
+    }
     val scenarios = SemanticTester.scenarios(packages)
     val nScenarios: Int = scenarios.foldLeft(0)((c, xs) => c + xs._2.size)
 
@@ -77,16 +88,12 @@ object StandaloneSemanticTestRunner {
     }
   }
 
-  final case class Config(
-      host: String,
-      port: Int,
-      packageContainer: DamlPackageContainer,
-      performReset: Boolean)
+  final case class Config(host: String, port: Int, darPackage: Option[File], performReset: Boolean)
 
   private val defaultConfig = Config(
     host = "localhost",
     port = SandboxConfig.DefaultPort,
-    packageContainer = DamlPackageContainer(),
+    darPackage = None,
     performReset = false,
   )
 
@@ -108,10 +115,10 @@ object StandaloneSemanticTestRunner {
       .action((_, c) => c.copy(performReset = true))
       .text("Perform a ledger reset before running the tests. Defaults to false.")
 
-    arg[File]("<archive>...")
+    arg[File]("<archive>")
       .unbounded()
-      .action((f, c) => c.copy(packageContainer = c.packageContainer.withFile(f)))
-      .text("DAML-LF Archives to load and run all scenarios from.")
+      .action((f, c) => c.copy(darPackage = Some(f)))
+      .text("DAR package to load and run all scenarios from.")
   }
 
 }

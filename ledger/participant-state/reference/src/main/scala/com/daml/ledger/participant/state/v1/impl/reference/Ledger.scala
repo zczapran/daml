@@ -421,4 +421,9 @@ class Ledger(timeModel: TimeModel, timeProvider: TimeProvider)(implicit mat: Act
       activeContracts: Map[AbsoluteContractId, AbsoluteContractInst],
       duplicationCheck: Set[(ApplicationId, CommandId)])
 
+  override def uploadDar(
+      knownSince: Instant,
+      sourceDescription: String,
+      payload: Array[Byte]): CompletionStage[UploadDarResult] =
+    sys.error(s"Dar upload not implemented yet")
 }

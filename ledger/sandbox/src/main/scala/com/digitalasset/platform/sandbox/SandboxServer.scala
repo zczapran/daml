@@ -22,7 +22,7 @@ import com.digitalasset.platform.sandbox.SandboxServer.{
   scheduleHeartbeats
 }
 import com.digitalasset.platform.sandbox.banner.Banner
-import com.digitalasset.platform.sandbox.config.{SandboxConfig, SandboxContext}
+import com.digitalasset.platform.sandbox.config.SandboxConfig
 import com.digitalasset.platform.sandbox.metrics.MetricsManager
 import com.digitalasset.platform.sandbox.services.SandboxResetService
 import com.digitalasset.platform.sandbox.stores.ActiveContractsInMemory
@@ -31,11 +31,13 @@ import com.digitalasset.platform.sandbox.stores.ledger._
 import com.digitalasset.platform.sandbox.stores.ledger.sql.SqlStartMode
 import com.digitalasset.platform.server.services.testing.TimeServiceBackend
 import com.digitalasset.platform.services.time.TimeProviderType
+import com.digitalasset.platform.sandbox.damle.SandboxPackageStore
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.Try
+import scala.language.postfixOps
 
 object SandboxServer {
   private val logger = LoggerFactory.getLogger(this.getClass)
@@ -73,19 +75,20 @@ object SandboxServer {
     }
 
   // if requested, initialize the ledger state with the given scenario
-  private def createInitialState(config: SandboxConfig, context: SandboxContext)
+  private def createInitialState(config: SandboxConfig, packages: SandboxPackageStore)
     : (ActiveContractsInMemory, ImmArray[LedgerEntryWithLedgerEndIncrement], Option[Instant]) = {
     // [[ScenarioLoader]] needs all the packages to be already compiled --
     // make sure that that's the case
     if (config.eagerPackageLoading || config.scenario.nonEmpty) {
-      for ((pkgId, pkg) <- context.packageContainer.packages) {
+      for (pkgId <- packages.listLfPackagesSync().keys) {
+        val pkg = packages.getLfPackageSync(pkgId).get
         engine
           .preloadPackage(pkgId, pkg)
           .consume(
             { _ =>
               sys.error("Unexpected request of contract")
             },
-            context.packageContainer.packages.get, { _ =>
+            packages.getLfPackageSync, { _ =>
               sys.error("Unexpected request of contract key")
             }
           )
@@ -95,7 +98,7 @@ object SandboxServer {
       case None => (ActiveContractsInMemory.empty, ImmArray.empty, None)
       case Some(scenario) =>
         val (acs, records, ledgerTime) =
-          ScenarioLoader.fromScenario(context.packageContainer, engine.compiledPackages(), scenario)
+          ScenarioLoader.fromScenario(packages, engine.compiledPackages(), scenario)
         (acs, records, Some(ledgerTime))
     }
   }
@@ -183,9 +186,18 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
       case LedgerIdMode.Dynamic() => LedgerIdGenerator.generateRandomId()
     }
 
-    val context = SandboxContext.fromConfig(config)
+    val packageStore = SandboxPackageStore()
 
-    val (acs, records, mbLedgerTime) = createInitialState(config, context)
+    // TODO is it sensible to have all the initial packages to be known
+    // since the epoch?
+    for (file <- config.damlPackages) {
+      packageStore.putDarFile(Instant.EPOCH, "", file) match {
+        case Right(details @ _) => ()
+        case Left(err) => sys.error(s"Could not load package $file: $err")
+      }
+    }
+
+    val (acs, records, mbLedgerTime) = createInitialState(config, packageStore)
 
     val (timeProvider, timeServiceBackendO: Option[TimeServiceBackend]) =
       (mbLedgerTime, config.timeProviderType) match {
@@ -223,11 +235,7 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
 
     val contractStore = new SandboxContractStore(ledger)
     val indexService =
-      new SandboxIndexAndWriteService(
-        ledger,
-        config.timeModel,
-        context.templateStore,
-        contractStore)
+      new SandboxIndexAndWriteService(ledger, config.timeModel, packageStore, contractStore)
 
     val stopHeartbeats = scheduleHeartbeats(timeProvider, ledger.publishHeartbeat)
 
@@ -270,7 +278,7 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
       BuildInfo.Version,
       ledgerId,
       newState.port.toString,
-      config.damlPackageContainer: AnyRef,
+      config.damlPackages,
       config.timeProviderType,
       ledgerType
     )
