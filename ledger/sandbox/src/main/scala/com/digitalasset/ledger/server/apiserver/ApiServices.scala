@@ -4,13 +4,7 @@
 package com.digitalasset.ledger.server.apiserver
 
 import akka.stream.ActorMaterializer
-import com.daml.ledger.participant.state.index.v2.{
-  IdentityProvider,
-  IndexActiveContractsService,
-  IndexConfigurationService,
-  IndexPackagesService,
-  _
-}
+import com.daml.ledger.participant.state.index.v2.{IdentityProvider, IndexActiveContractsService, IndexConfigurationService, IndexPackagesService, _}
 import com.daml.ledger.participant.state.v1.WriteService
 import com.digitalasset.api.util.TimeProvider
 import com.digitalasset.daml.lf.engine._
@@ -19,6 +13,7 @@ import com.digitalasset.ledger.api.v1.command_completion_service.CompletionEndRe
 import com.digitalasset.ledger.client.services.commands.CommandSubmissionFlow
 import com.digitalasset.platform.sandbox.config.SandboxConfig
 import com.digitalasset.platform.sandbox.services._
+import com.digitalasset.platform.sandbox.services.admin.ApiPackageManagementService
 import com.digitalasset.platform.sandbox.services.transaction.ApiTransactionService
 import com.digitalasset.platform.sandbox.stores.ledger.CommandExecutorImpl
 import com.digitalasset.platform.server.api.validation.IdentifierResolver
@@ -147,6 +142,8 @@ object ApiServices {
           )
         }
 
+      val packageManagementService = ApiPackageManagementService.createApiService(indexService, writeService)
+
       new ApiServicesBundle(
         apiTimeServiceOpt.toList :::
           List(
@@ -158,7 +155,8 @@ object ApiServices {
           apiCompletionService,
           apiCommandService,
           apiActiveContractsService,
-          apiReflectionService
+          apiReflectionService,
+          packageManagementService
         ))
     }
   }

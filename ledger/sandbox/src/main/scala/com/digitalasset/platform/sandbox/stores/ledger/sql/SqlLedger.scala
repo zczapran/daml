@@ -320,6 +320,7 @@ private class SqlLedger(
           (transactionId.toLong, t) // the transaction is also the offset
       })(DEC)
 
+  override def getCurrentTime(): Instant = timeProvider.getCurrentTime
 }
 
 private class SqlLedgerFactory(ledgerDao: LedgerDao) {

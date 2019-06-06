@@ -60,6 +60,8 @@ private class MeteredLedger(ledger: Ledger, mm: MetricsManager) extends Ledger {
   override def close(): Unit = {
     ledger.close()
   }
+
+  override def getCurrentTime(): Instant = ledger.getCurrentTime()
 }
 
 object MeteredLedger {

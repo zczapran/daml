@@ -199,4 +199,6 @@ class InMemoryLedger(
           case t: LedgerEntry.Transaction =>
             (transactionId.toLong, t) // the transaction id is also the offset
         })
+
+  override def getCurrentTime(): Instant = timeProvider.getCurrentTime
 }

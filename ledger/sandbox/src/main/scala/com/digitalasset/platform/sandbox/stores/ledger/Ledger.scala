@@ -54,6 +54,8 @@ trait Ledger extends AutoCloseable {
 
   def lookupTransaction(
       transactionId: TransactionIdString): Future[Option[(Long, LedgerEntry.Transaction)]]
+
+  def getCurrentTime(): Instant
 }
 
 object Ledger {

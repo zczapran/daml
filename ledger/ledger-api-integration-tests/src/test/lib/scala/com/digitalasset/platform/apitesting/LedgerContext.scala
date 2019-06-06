@@ -16,6 +16,8 @@ import com.digitalasset.ledger.api.domain
 import com.digitalasset.ledger.api.testing.utils.{MockMessages, Resource}
 import com.digitalasset.ledger.api.v1.active_contracts_service.ActiveContractsServiceGrpc
 import com.digitalasset.ledger.api.v1.active_contracts_service.ActiveContractsServiceGrpc.ActiveContractsService
+import com.digitalasset.ledger.api.v1.admin.package_management_service.PackageManagementServiceGrpc
+import com.digitalasset.ledger.api.v1.admin.package_management_service.PackageManagementServiceGrpc.PackageManagementService
 import com.digitalasset.ledger.api.v1.command_completion_service.CommandCompletionServiceGrpc
 import com.digitalasset.ledger.api.v1.command_completion_service.CommandCompletionServiceGrpc.CommandCompletionService
 import com.digitalasset.ledger.api.v1.command_service.CommandServiceGrpc
@@ -25,10 +27,7 @@ import com.digitalasset.ledger.api.v1.command_submission_service.CommandSubmissi
 import com.digitalasset.ledger.api.v1.ledger_configuration_service.LedgerConfigurationServiceGrpc
 import com.digitalasset.ledger.api.v1.ledger_configuration_service.LedgerConfigurationServiceGrpc.LedgerConfigurationService
 import com.digitalasset.ledger.api.v1.ledger_identity_service.LedgerIdentityServiceGrpc.LedgerIdentityService
-import com.digitalasset.ledger.api.v1.ledger_identity_service.{
-  GetLedgerIdentityRequest,
-  LedgerIdentityServiceGrpc
-}
+import com.digitalasset.ledger.api.v1.ledger_identity_service.{GetLedgerIdentityRequest, LedgerIdentityServiceGrpc}
 import com.digitalasset.ledger.api.v1.package_service.PackageServiceGrpc
 import com.digitalasset.ledger.api.v1.package_service.PackageServiceGrpc.PackageService
 import com.digitalasset.ledger.api.v1.testing.reset_service.{ResetRequest, ResetServiceGrpc}
@@ -54,7 +53,6 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 import scala.util.Success
 import scala.concurrent.duration._
-
 import scalaz.syntax.tag._
 
 trait LedgerContext {
@@ -88,6 +86,7 @@ trait LedgerContext {
   def packageClient: PackageClient
   def acsClient: ActiveContractSetClient
   def reflectionService: ServerReflectionGrpc.ServerReflectionStub
+  def packageManagementService: PackageManagementService
 
   /**
     * resetService is protected on purpose, to disallow moving an instance of LedgerContext into an invalid state,
@@ -220,6 +219,9 @@ object LedgerContext {
 
     override def reflectionService: ServerReflectionGrpc.ServerReflectionStub =
       ServerReflectionGrpc.newStub(channel)
+
+    override def packageManagementService: PackageManagementService =
+      PackageManagementServiceGrpc.stub(channel)
   }
 
   object SingleChannelContext {
