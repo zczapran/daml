@@ -12,12 +12,12 @@ trigger: none
 #
 # The setup is kept here in case it suddenly starts to work.
 schedules:
-- cron: "0 * * * *"
-  displayName: hourly cron
+- cron: '* * * * *'
+  displayName: minutely cron
   branches:
     include:
     - master
-  always: true
+  always: 'true'
 
 jobs:
   - job: docs
