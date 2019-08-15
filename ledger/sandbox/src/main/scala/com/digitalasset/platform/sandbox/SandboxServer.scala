@@ -122,7 +122,6 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
       packageStore: InMemoryPackageStore)
       extends AutoCloseable {
     override def close(): Unit = {
-      // FIXME: extra close - when closed during reset close is called on already closed service causing an exception!
       apiServerState.close()
       infra.close()
     }
@@ -131,7 +130,6 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
       implicit val ec: ExecutionContext = sandboxState.infra.executionContext
       val apiServicesClosed = apiServerState.apiServer.servicesClosed()
       //need to run this async otherwise the callback kills the server under the in-flight reset service request!
-
       Future {
         apiServerState.close // fully tear down the old server
         //TODO: eliminate the state mutation somehow
@@ -150,8 +148,8 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
   def port: Int = sandboxState.apiServerState.port
 
   /** the reset service is special, since it triggers a server shutdown */
-  private def resetService(ledgerId: LedgerId): SandboxResetService = new SandboxResetService(
-    ledgerId,
+  private val resetService: SandboxResetService = new SandboxResetService(
+    () => sandboxState.apiServerState.ledgerId,
     () => sandboxState.infra.executionContext,
     () => sandboxState.resetAndRestartServer()
   )
@@ -237,13 +235,12 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
                     indexAndWriteService.publishHeartbeat
                   ))
             )(am, esf)
-            .map(_.withServices(List(resetService(ledgerId)))),
+            .map(_.withServices(List(resetService))),
         // NOTE(JM): Re-use the same port after reset.
         Option(sandboxState).fold(config.port)(_.apiServerState.port),
         config.maxInboundMessageSize,
         config.address,
-        config.tlsConfig.flatMap(_.server),
-        List(resetService(ledgerId))
+        config.tlsConfig.flatMap(_.server)
       ),
       asyncTolerance
     )
