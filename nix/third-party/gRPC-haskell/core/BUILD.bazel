@@ -23,7 +23,7 @@ c2hs_suite(
         "src/Network/GRPC/Unsafe.chs",
         "src/Network/GRPC/Unsafe/Security.chs",
     ],
-    compiler_flags = ["-XCPP"],
+    compiler_flags = ["-XCPP", "-DDEBUG"],
     hazel_deps = [
         "async",
         "base",
@@ -55,6 +55,7 @@ cc_library(
     hdrs = glob(["include/*.h"]),
     includes = ["include/"],
     visibility = ["//visibility:public"],
+    copts = ["-DGRPC_HASKELL_DEBUG"],
     deps = [
         "@com_github_grpc_grpc//:grpc",
     ],

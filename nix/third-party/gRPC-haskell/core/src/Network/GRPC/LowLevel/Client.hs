@@ -5,13 +5,14 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
 {-# LANGUAGE ViewPatterns      #-}
+{-# OPTIONS_GHC -Wwarn #-}
 
 -- | This module defines data structures and operations pertaining to registered
 -- clients using registered calls; for unregistered support, see
 -- `Network.GRPC.LowLevel.Client.Unregistered`.
 module Network.GRPC.LowLevel.Client where
 
-import           Control.Exception                     (bracket)
+import           Control.Exception                     (bracket, mask_)
 import           Control.Concurrent.MVar
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -449,21 +450,21 @@ clientRequestParent cl@(clientCQ -> cq) p rm tm body initMeta =
     go (unsafeCC -> c) =
       -- NB: the send and receive operations below *must* be in separate
       -- batches, or the client hangs when the server can't be reached.
-      runOps c cq
+      mask_ (runOps c cq
         [ OpSendInitialMetadata initMeta
         , OpSendMessage body
         , OpSendCloseFromClient
-        ]
+        ])
         >>= \case
           Left x -> do
             grpcDebug "clientRequest(R) : batch error sending."
             return $ Left x
           Right rs ->
-            runOps c cq
+            mask_ (runOps c cq
               [ OpRecvInitialMetadata
               , OpRecvMessage
               , OpRecvStatusOnClient
-              ]
+              ])
               >>= \case
                 Left x -> do
                   grpcDebug "clientRequest(R): batch error receiving.."
