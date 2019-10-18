@@ -96,6 +96,11 @@ http_post url headers body = do
       2 -> return $ HTTP.responseBody response
       _ -> Exit.die $ "POST " <> url <> " failed with " <> show status <> "."
 
+http_post' :: String -> [(String, String)] -> LBS.ByteString -> LBS.ByteString -> IO LBS.ByteString
+http_post' url headers body resp = do
+    putStrLn $ "curl -XPOST " <> url <> " " <> (List.join " " $ map (\(n, v) -> "-H \'" <> n <> ": " <> v <> "' ") (("User-Agent",  "DAML cron (team-daml-language@digitalasset.com)"):headers)) <> " -d'" <> (LBS.toString body) <> "'"
+    return resp
+
 github_versions :: [GitHubVersion] -> Set.Set String
 github_versions vs = Set.fromList $ map name vs
 
@@ -136,7 +141,7 @@ build_docs_folder path versions = do
     writeFile (path <> "/versions.json") versions_json
     shell_ $ "mkdir -p  " <> path <> "/" <> latest
     shell_ $ "tar xzf bazel-genfiles/docs/html.tar.gz --strip-components=1 -C " <> path <> "/" <> latest
-    Foldable.for_ (tail versions) $ \version -> do
+    Foldable.for_ (versions |> tail |> take 3) $ \version -> do
         putStrLn $ "Building older docs: " <> version
         shell_ $ "git checkout v" <> version
         robustly_download_nix_packages
@@ -157,16 +162,16 @@ check_s3_versions gh_versions = do
 push_to_s3 :: String -> IO ()
 push_to_s3 doc_folder = do
     putStrLn "Pushing new versions file first..."
-    shell_ $ "aws s3 cp " <> doc_folder <> "/versions.json s3://docs-daml-com/versions.json --acl public-read"
+    putStrLn $ "aws s3 cp " <> doc_folder <> "/versions.json s3://docs-daml-com/versions.json --acl public-read"
     putStrLn "Pushing to S3 bucket..."
-    shell_ $ "aws s3 sync " <> doc_folder
+    putStrLn $ "aws s3 sync " <> doc_folder
              <> " s3://docs-daml-com/"
              <> " --delete"
              <> " --acl public-read"
              <> " --exclude '*.doctrees/*'"
              <> " --exclude '*.buildinfo'"
     putStrLn "Refreshing CloudFront cache..."
-    shell_ $ "aws cloudfront create-invalidation"
+    putStrLn $ "aws cloudfront create-invalidation"
              <> " --distribution-id E1U753I56ERH55"
              <> " --paths '/*'"
 
@@ -200,18 +205,20 @@ tell_hubspot latest = do
     date <- read <$> (<> "000") <$> init <$> (shell $ "date -d " <> (published_at latest) <> " +%s")
     let summary = "Release notes for version " <> (name latest) <> "."
     token <- Env.getEnv "HUBSPOT_TOKEN"
-    submit_blog <- http_post ("https://api.hubapi.com/content/api/v2/blog-posts?hapikey=" <> token)
-                             [("Content-Type", "application.json")]
-                             (JSON.encode $ SubmitBlog { body = LBS.toString desc,
-                                                         date,
-                                                         summary,
-                                                         version = (name latest) })
+    submit_blog <- http_post' ("https://api.hubapi.com/content/api/v2/blog-posts?hapikey=" <> token)
+                              [("Content-Type", "application.json")]
+                              (JSON.encode $ SubmitBlog { body = LBS.toString desc,
+                                                          date,
+                                                          summary,
+                                                          version = (name latest) })
+                              $ LBS.fromString "{\"id\": 666}"
     case JSON.decode submit_blog of
       Nothing -> Exit.die $ "No blog id from HubSpot: \n" <> LBS.toString submit_blog
       Just (BlogId { blog_id }) -> do
-          _ <- http_post ("https://api.hubapi.com/content/api/v2/blog-posts/" <> show blog_id <> "/publish-action?hapikey=" <> token)
-                         [("Content-Type", "application.json")]
-                         (JSON.encode $ JSON.object [("action", "schedule-publish")])
+          _ <- http_post' ("https://api.hubapi.com/content/api/v2/blog-posts/" <> show blog_id <> "/publish-action?hapikey=" <> token)
+                          [("Content-Type", "application.json")]
+                          (JSON.encode $ JSON.object [("action", "schedule-publish")])
+                          $ LBS.fromString "null"
           return ()
 
 data GitHubVersion = GitHubVersion { prerelease :: Bool, tag_name :: String, notes :: String, published_at :: String } deriving Show
