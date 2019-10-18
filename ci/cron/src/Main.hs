@@ -238,7 +238,7 @@ main = do
     putStrLn "Checking for new version..."
     gh_resp <- remove_prereleases <$> http_get "https://api.github.com/repos/digital-asset/daml/releases"
     docs_resp <- docs_versions <$> http_get "https://docs.daml.com/versions.json"
-    if (github_versions gh_resp) == docs_resp
+    if False && (github_versions gh_resp) == docs_resp
     then do
         putStrLn "No new version found, skipping."
         Exit.exitSuccess
