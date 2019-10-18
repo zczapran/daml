@@ -248,7 +248,7 @@ main = do
             build_docs_folder docs_folder $ gh_resp |> List.sortBy compare_versions |> reverse |> map name
             putStrLn "Done building docs bundle. Checking versions again to avoid race condition..."
             s3_matches <- check_s3_versions (github_versions gh_resp)
-            if s3_matches
+            if False && s3_matches
             then do
                 putStrLn "No more new version, another process must have pushed already."
                 Exit.exitSuccess
