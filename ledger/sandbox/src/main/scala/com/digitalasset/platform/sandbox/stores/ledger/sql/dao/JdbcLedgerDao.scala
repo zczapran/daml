@@ -94,9 +94,9 @@ private class JdbcLedgerDao(
 
   override def currentHealth(): HealthStatus = dbDispatcher.currentHealth()
 
-  override def lookupLedgerId(): Future[Option[LedgerId]] =
+  override def lookupLedgerId(callerId: String): Future[Option[LedgerId]] =
     dbDispatcher
-      .executeSql("get_ledger_id") { implicit conn =>
+      .executeSql(s"get_ledger_id$callerId") { implicit conn =>
         SQL_SELECT_LEDGER_ID
           .as(ledgerString("ledger_id").map(id => LedgerId(id.toString)).singleOpt)
       }

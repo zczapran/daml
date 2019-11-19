@@ -49,8 +49,8 @@ private class MeteredLedgerReadDao(ledgerDao: LedgerReadDao, metrics: MetricRegi
 
   override def currentHealth(): HealthStatus = ledgerDao.currentHealth()
 
-  override def lookupLedgerId(): Future[Option[LedgerId]] =
-    timedFuture(Metrics.lookupLedgerId, ledgerDao.lookupLedgerId())
+  override def lookupLedgerId(callerId: String): Future[Option[LedgerId]] =
+    timedFuture(Metrics.lookupLedgerId, ledgerDao.lookupLedgerId(callerId))
 
   override def lookupLedgerEnd(): Future[Long] =
     timedFuture(Metrics.lookupLedgerEnd, ledgerDao.lookupLedgerEnd())
