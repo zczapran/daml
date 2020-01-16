@@ -80,3 +80,41 @@ data Quux =
     Corge { x: Int, y: Text }
   | Grault { z: Bool }
   deriving (Show, Eq)
+
+
+data OptRec = OptRec
+  { orDirect: Optional Text
+  , orNested: Optional (Optional Int)
+  }
+  deriving (Eq, Show)
+
+data OptVar a =
+    ODirect (Optional Int)
+  | ONested (Optional (Optional Text))
+  | OPoly a
+  | OPolyNested (Optional a)
+  deriving (Eq, Show)
+
+template Opt with
+    owner: Party
+    oDirect: Optional Int
+    oRec: [OptRec]
+    oVarInt: [OptVar Int]
+    oVarOpt: [OptVar (Optional Int)]
+    oList: [Optional Int]
+    oListOpt3: [Optional (Optional (Optional Int))]
+  where
+    signatory owner
+
+test = scenario do
+  owner <- getParty "Alice"
+  let opt = Opt
+        { owner
+        , oDirect = None
+        , oRec = [OptRec None None, OptRec (Some "abc") (Some None), OptRec (Some "") (Some (Some 1))]
+        , oVarInt = [ODirect None, ODirect (Some 1), ONested None, ONested (Some None), ONested (Some (Some "abc")), OPoly 1, OPolyNested None, OPolyNested (Some 1)]
+        , oVarOpt = [OPoly None, OPoly (Some 0), OPolyNested None, OPolyNested (Some None), OPolyNested (Some (Some 17))]
+        , oList = [None, Some 5]
+        , oListOpt3 = [None, Some None, Some (Some None), Some (Some (Some 1))]
+        }
+  submit owner do create opt

@@ -2,6 +2,7 @@ sdk-version: 0.0.0
 name: daml
 version: 1.0.0
 source: Main.daml
+scenario: Main:test
 parties:
 - Alice
 - Bob

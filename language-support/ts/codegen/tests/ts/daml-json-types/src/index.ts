@@ -9,6 +9,7 @@ import * as jtv from '@mojotech/json-type-validation';
 export interface Serializable<T> {
   // NOTE(MH): This must be a function to allow for mutually recursive decoders.
   decoder: () => jtv.Decoder<T>;
+  isOptional: boolean,
 }
 
 /**
