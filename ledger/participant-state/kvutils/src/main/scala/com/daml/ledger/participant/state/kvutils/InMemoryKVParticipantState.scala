@@ -87,6 +87,7 @@ object InMemoryKVParticipantState {
 class InMemoryKVParticipantState(
     val participantId: ParticipantId,
     val ledgerId: LedgerString = Ref.LedgerString.assertFromString(UUID.randomUUID.toString),
+    val timeModel: TimeModel = TimeModel.reasonableDefault,
     file: Option[File] = None,
 )(implicit system: ActorSystem, mat: Materializer)
     extends ReadService
@@ -102,7 +103,7 @@ class InMemoryKVParticipantState(
   // The initial ledger configuration
   private val initialLedgerConfig = Configuration(
     generation = 0,
-    timeModel = TimeModel.reasonableDefault
+    timeModel = timeModel
   )
 
   // DAML Engine for transaction validation.

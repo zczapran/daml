@@ -3,6 +3,7 @@
 package com.daml.ledger.api.server.damlonx.reference.v2.cli
 
 import java.io.File
+import java.time.Duration
 
 import com.daml.ledger.api.server.damlonx.reference.v2.Config
 import com.digitalasset.daml.lf.data.Ref
@@ -63,6 +64,15 @@ object Cli {
         .unbounded()
         .text("A list of triples in the form `<participant-id>,<port>,<index-jdbc-url>` to spin up multiple nodes backed by the same in-memory ledger")
         .action((e, c) => c.copy(extraParticipants = c.extraParticipants :+ e))
+      opt[String]("ledgerid")
+        .optional()
+        .action((id, c) => c.copy(ledgerId = id))
+        .text("Sandbox ledger ID. If missing, a random unique ledger ID will be used. Only useful with persistent stores.")
+      opt[Long]("max-ttl-seconds")
+        .optional()
+        .validate(v => Either.cond(v > 0, (), "Max TTL must be a positive number"))
+        .text("The maximum TTL allowed for commands in seconds")
+        .action( (maxTtl, config) => config.copy(timeModel = config.timeModel.copy(maxTtl = Duration.ofSeconds(maxTtl))))
       arg[File]("<archive>...")
         .optional()
         .unbounded()

@@ -12,6 +12,7 @@ import com.daml.ledger.api.server.damlonx.reference.v2.cli.Cli
 import com.daml.ledger.participant.state.kvutils.InMemoryKVParticipantState
 import com.daml.ledger.participant.state.v1.{ReadService, SubmissionId, WriteService}
 import com.digitalasset.daml.lf.archive.DarReader
+import com.digitalasset.daml.lf.data.Ref
 import com.digitalasset.daml_lf_dev.DamlLf.Archive
 import com.digitalasset.ledger.api.auth.{AuthService, AuthServiceWildcard}
 import com.digitalasset.platform.apiserver.{ApiServerConfig, StandaloneApiServer}
@@ -39,6 +40,7 @@ object ReferenceServer extends App {
   implicit val system: ActorSystem = ActorSystem("indexed-kvutils")
   implicit val materializer: Materializer = Materializer(system)
   implicit val executionContext: ExecutionContext = system.dispatcher
+  val ledgerId = Ref.LedgerString.assertFromString(if(config.ledgerId.isEmpty) UUID.randomUUID.toString else config.ledgerId)
 
   val resource = for {
     // Take ownership of the actor system and materializer so they're cleaned up properly.
@@ -46,7 +48,7 @@ object ReferenceServer extends App {
     _ <- ResourceOwner.forActorSystem(() => system).acquire()
     _ <- ResourceOwner.forMaterializer(() => materializer).acquire()
     ledger <- ResourceOwner
-      .forCloseable(() => new InMemoryKVParticipantState(config.participantId))
+      .forCloseable(() => new InMemoryKVParticipantState(config.participantId, ledgerId, config.timeModel))
       .acquire()
     _ = config.archiveFiles.foreach { file =>
       val submissionId = SubmissionId.assertFromString(UUID.randomUUID().toString)

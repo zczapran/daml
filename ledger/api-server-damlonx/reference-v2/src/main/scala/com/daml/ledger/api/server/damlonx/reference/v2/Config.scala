@@ -11,6 +11,7 @@ import com.digitalasset.api.util.TimeProvider
 import com.digitalasset.daml.lf.data.Ref.LedgerString
 import com.digitalasset.ledger.api.tls.TlsConfiguration
 import com.digitalasset.platform.indexer.IndexerStartupMode
+import com.daml.ledger.participant.state.v1.TimeModel
 
 final case class Config(
     port: Int,
@@ -23,6 +24,8 @@ final case class Config(
     participantId: ParticipantId,
     extraParticipants: Vector[(ParticipantId, Int, String)],
     startupMode: IndexerStartupMode,
+    timeModel: TimeModel,
+    ledgerId: String,
 ) {
   def withTlsConfig(modify: TlsConfiguration => TlsConfiguration): Config =
     copy(tlsConfig = Some(modify(tlsConfig.getOrElse(TlsConfiguration.Empty))))
@@ -43,5 +46,7 @@ object Config {
       participantId = LedgerString.assertFromString("standalone-participant"),
       extraParticipants = Vector.empty,
       startupMode = IndexerStartupMode.MigrateAndStart,
+      timeModel = TimeModel.reasonableDefault,
+      ledgerId = "",
     )
 }
