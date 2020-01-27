@@ -72,7 +72,8 @@ object Cli {
         .optional()
         .validate(v => Either.cond(v > 0, (), "Max TTL must be a positive number"))
         .text("The maximum TTL allowed for commands in seconds")
-        .action( (maxTtl, config) => config.copy(timeModel = config.timeModel.copy(maxTtl = Duration.ofSeconds(maxTtl))))
+        .action((maxTtl, config) =>
+          config.copy(timeModel = config.timeModel.copy(maxTtl = Duration.ofSeconds(maxTtl))))
       arg[File]("<archive>...")
         .optional()
         .unbounded()
