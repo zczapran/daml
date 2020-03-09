@@ -1709,6 +1709,58 @@ private class JdbcLedgerDao(
       ()
     }
 
+  private val SQL_PRUNE_LEDGER_ENTRIES = SQL(
+    """
+      |delete from contract_keys where contract_id in (select id from contracts where archive_offset <= {prune_up_to_inclusive});
+      |delete from contract_key_maintainers where contract_id in (select id from contracts where archive_offset <= {prune_up_to_inclusive});
+      |delete from contract_observers where contract_id in (select id from contracts where archive_offset <= {prune_up_to_inclusive});
+      |delete from contract_signatories where contract_id in (select id from contracts where archive_offset <= {prune_up_to_inclusive});
+      |delete from contract_witnesses where contract_id in (select id from contracts where archive_offset <= {prune_up_to_inclusive});
+      |
+      |delete from contract_divulgences where contract_id in (select id from contracts where archive_offset <= {prune_up_to_inclusive});
+      |delete from contracts where archive_offset <= {prune_up_to_inclusive};
+      |delete from contract_data where id in (select id from contracts where archive_offset <= {prune_up_to_inclusive});
+      |
+      |delete from disclosures where transaction_id in (
+      |  select transaction_id from ledger_entries where
+      |    typ = 'transaction' and
+      |--    (transaction_id not in (select transaction_id from contracts) and
+      |--     transaction_id not in (select transaction_id from contract_divulgences)) and
+      |    ledger_offset <= {prune_up_to_inclusive});
+      |
+      |delete from ledger_entries where
+      |  typ in ('transaction', 'rejection', 'checkpoint') and
+      |--  (typ != 'transaction' or
+      |--     (transaction_id not in (select transaction_id from contracts) and
+      |--      transaction_id not in (select transaction_id from contract_divulgences))) and
+      |  ledger_offset <= {prune_up_to_inclusive};
+      |
+      |delete from participant_command_completions where
+      |  completion_offset <= {prune_up_to_inclusive} and
+      |  completion_offset not in (select ledger_offset from ledger_entries);
+      |""".stripMargin)
+
+  private def pruneLedgerEntries(upTo: LedgerOffset)(implicit conn: Connection): Unit = {
+    val _ = SQL_PRUNE_LEDGER_ENTRIES
+      .on(
+        "prune_up_to_inclusive" -> upTo
+      )
+      .execute()
+  }
+
+  override def storePruningEntry(
+      offset: LedgerOffset,
+      newLedgerEnd: LedgerOffset,
+      externalOffset: Option[ExternalOffset],
+      pruneUpTo: LedgerOffset): Future[PersistenceResponse] = {
+    dbDispatcher.executeSql("store_pruning_entry", Some(s"pruning up to: $pruneUpTo")) {
+      implicit conn =>
+        updateLedgerEnd(newLedgerEnd, externalOffset)
+        pruneLedgerEntries(pruneUpTo)
+        PersistenceResponse.Ok
+    }
+  }
+
   private val SQL_TRUNCATE_ALL_TABLES =
     SQL("""
         |truncate ledger_entries cascade;

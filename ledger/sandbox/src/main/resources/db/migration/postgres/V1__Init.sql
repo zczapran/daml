@@ -81,11 +81,13 @@ CREATE TABLE contracts (
   -- using the QualifiedName#toString format
   name           varchar                                            not null,
   -- this is denormalized much like `transaction_id` -- see comment above.
-  create_offset  bigint references ledger_entries (ledger_offset)   not null,
+  -- pruning: removed fk-constraint: create_offset  bigint references ledger_entries (ledger_offset)   not null,
+  create_offset  bigint                                             not null,
   -- this on the other hand _cannot_ be easily found out by looking into
   -- `ledger_entries` -- you'd have to traverse from `create_offset` which
   -- would be prohibitively expensive.
-  archive_offset bigint references ledger_entries (ledger_offset),
+  -- pruning: removed fk-constraint: archive_offset bigint references ledger_entries (ledger_offset),
+  archive_offset bigint,
   -- the serialized contract value, using the definition in
   -- `daml-lf/transaction/src/main/protobuf/com/digitalasset/daml/lf/value.proto`
   -- and the encoder in `ContractSerializer.scala`.

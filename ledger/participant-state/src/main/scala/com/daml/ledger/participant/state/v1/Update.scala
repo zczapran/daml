@@ -215,4 +215,44 @@ object Update {
     }
   }
 
+  /** Signal that the participant-side ledger update log has been pruned at
+    * the specified offset range, allowing callers to likewise prune the same update range.
+    *
+    * @param submissionId:
+    *   The submission id of the prune request.
+    *
+    * @param recordTime:
+    *   The ledger-provided timestamp at which the participant-local updates were pruned.
+    *
+    * @param pruneTo
+    *   The ending offset up to which (inclusively) the update log has been pruned.
+    */
+  final case class UpdatesPruned(
+      submissionId: SubmissionId,
+      recordTime: Timestamp,
+      pruneTo: Offset,
+  ) extends Update {
+    override def description: String = s"Updates pruned up to $pruneTo"
+
+  }
+
+  /** Signal the rejection of participant prune request.
+    *
+    * @param submissionId:
+    *   The submission id of the prune request.
+    *
+    * @param recordTime:
+    *   The ledger-provided timestamp at which the participant-local prune has been rejected.
+    *
+    * @param rejectionReason
+    *   Reason for rejection of the prune request.
+    */
+  final case class UpdatePruningRejected(
+      submissionId: SubmissionId,
+      recordTime: Timestamp,
+      rejectionReason: String,
+  ) extends Update {
+    override def description: String = s"Update pruning rejected"
+  }
+
 }

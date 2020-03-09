@@ -349,6 +349,18 @@ class JdbcIndexer private[indexer] (
           .storeLedgerEntry(headRef, headRef + 1, externalOffset, rejection)
           .map(_ => ())(DEC)
           .map(_ => headRef = headRef + 1)(DEC)
+
+      case UpdatesPruned(submissionId, recordTime, to) =>
+        // TODO: Only ledgers for which external offsets match with indexer offsets can prune:
+        val numPruneUpTo: Long = to.components.headOption.getOrElse(0L)
+        ledgerDao
+          .storePruningEntry(headRef, headRef + 1, externalOffset, numPruneUpTo)
+          .map(_ => headRef = headRef + 1)(DEC)
+
+      case UpdatePruningRejected(submissionId, recordTime, rejectionReason) =>
+        // TODO
+        Future.successful(())
+
     }
   }
 
