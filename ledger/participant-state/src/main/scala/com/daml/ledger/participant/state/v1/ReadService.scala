@@ -42,7 +42,7 @@ trait ReadService extends ReportsHealth {
     *
     * 1. properties about the sequence of [[(Offset, Update)]] tuples
     *    in a stream read from the beginning, and
-    * 2. properties relating the streams obtained from two separate alls
+    * 2. properties relating the streams obtained from two separate calls
     *   to [[ReadService.stateUpdates]].
     *
     * The first class of properties are invariants of a single stream:
@@ -158,7 +158,7 @@ trait ReadService extends ReportsHealth {
     *   `A`, respectively `B`.
     * The projections of `tx1` and `tx2` to the nodes visible to both `A` and `B` is the same.
     *
-    * Note that the the transaction `tx1` associated to `tid` on `p1` is not required to be the same as
+    * Note that the transaction `tx1` associated to `tid` on `p1` is not required to be the same as
     * the transaction `tx2` associated to `tid` on `p2`, as these two participants do not necessarily
     * host the same parties; and some implementations ensure data segregation on the ledger. Requiring
     * only the projections to sets of parties to be equal leaves just enough leeway for this

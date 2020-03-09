@@ -242,6 +242,16 @@ trait LedgerWriteDao extends ReportsHealth {
       optEntry: Option[PackageLedgerEntry]
   ): Future[PersistenceResponse]
 
+  /**
+    * Prune ledger entries up to pruneUpTo.
+    */
+  def storePruningEntry(
+      offset: LedgerOffset,
+      newLedgerEnd: LedgerOffset,
+      externalOffset: Option[ExternalOffset],
+      pruneUpTo: LedgerOffset
+  ): Future[PersistenceResponse]
+
   /** Resets the platform into a state as it was never used before. Meant to be used solely for testing. */
   def reset(): Future[Unit]
 

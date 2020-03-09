@@ -150,6 +150,7 @@ class MeteredLedgerDao(ledgerDao: LedgerDao, metrics: MetricRegistry)
     val storePackageEntry: Timer = metrics.timer("daml.index.db.store_package_entry")
     val storeLedgerEntry: Timer = metrics.timer("daml.index.db.store_ledger_entry")
     val storeConfigurationEntry: Timer = metrics.timer("daml.index.db.store_configuration_entry")
+    val storePruningEntry: Timer = metrics.timer("daml.index.db.store_pruning_entry")
   }
 
   override def currentHealth(): HealthStatus = ledgerDao.currentHealth()
@@ -220,4 +221,14 @@ class MeteredLedgerDao(ledgerDao: LedgerDao, metrics: MetricRegistry)
     timedFuture(
       Metrics.storePackageEntry,
       ledgerDao.storePackageEntry(offset, newLedgerEnd, externalOffset, packages, entry))
+
+  override def storePruningEntry(
+      offset: LedgerOffset,
+      newLedgerEnd: LedgerOffset,
+      externalOffset: Option[ExternalOffset],
+      pruneUpTo: LedgerOffset): Future[PersistenceResponse] =
+    timedFuture(
+      Metrics.storePruningEntry,
+      ledgerDao.storePruningEntry(offset, newLedgerEnd, externalOffset, pruneUpTo))
+
 }
