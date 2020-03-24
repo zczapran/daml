@@ -1,8 +1,9 @@
-{ stdenv, targetPackages
+{ stdenv, pkgsBuildTarget, targetPackages
 
 # build-tools
 , bootPkgs, makeWrapper
-, autoconf, automake, coreutils, fetchurl, fetchpatch, perl, python3, m4, sphinx
+, autoconf, automake, coreutils, fetchurl, perl, python3, m4, sphinx
+, bash
 , elfutils
 
 , libiconv ? null, ncurses
@@ -10,7 +11,7 @@
 , # GHC can be built with system libffi or a bundled one.
   libffi ? null
 
-, useLLVM ? !stdenv.targetPlatform.isx86 || (stdenv.targetPlatform.isMusl && stdenv.hostPlatform != stdenv.targetPlatform)
+, useLLVM ? !stdenv.targetPlatform.isx86
 , # LLVM is conceptually a run-time-only depedendency, but for
   # non-x86, we need LLVM to bootstrap later stages, so it becomes a
   # build-time dependency too.
@@ -32,9 +33,13 @@
 
 , # What flavour to build. An empty string indicates no
   # specific flavour and falls back to ghc default values.
-  ghcFlavour ? stdenv.lib.optionalString (stdenv.targetPlatform != stdenv.hostPlatform) "perf-cross"
+  ghcFlavour ? stdenv.lib.optionalString (stdenv.targetPlatform != stdenv.hostPlatform)
+    (if useLLVM then "perf-cross" else "perf-cross-ncg")
 
 , enableDwarf ? false
+, # Whether to disable the large address space allocator
+  # necessary fix for iOS: https://www.reddit.com/r/haskell/comments/4ttdz1/building_an_osxi386_to_iosarm64_cross_compiler/d5qvd67/
+  disableLargeAddressSpace ? stdenv.targetPlatform.isDarwin && stdenv.targetPlatform.isAarch64
 }:
 
 assert !enableIntegerSimple -> gmp != null;
@@ -82,33 +87,25 @@ let
     ++ stdenv.lib.optional enableDwarf elfutils
     ++ stdenv.lib.optional (platform.libc != "glibc" && !targetPlatform.isWindows) libiconv;
 
-  toolsForTarget =
-    if hostPlatform == buildPlatform then
-      [ targetPackages.stdenv.cc ] ++ stdenv.lib.optional useLLVM llvmPackages.llvm
-    else assert targetPlatform == hostPlatform; # build != host == target
-      [ stdenv.cc ] ++ stdenv.lib.optional useLLVM buildLlvmPackages.llvm;
+  toolsForTarget = [
+    pkgsBuildTarget.targetPackages.stdenv.cc
+  ] ++ stdenv.lib.optional useLLVM buildLlvmPackages.llvm;
 
   targetCC = builtins.head toolsForTarget;
 
 in
 stdenv.mkDerivation (rec {
-  version = "8.6.5";
+  version = "8.8.3";
   name = "${targetPrefix}ghc-${version}";
 
   src = fetchurl {
-    url = "https://downloads.haskell.org/~ghc/${version}/ghc-${version}-src.tar.xz";
-    sha256 = "0qg3zsmbk4rkwkc3jpas3zs74qaxmw4sp4v1mhsbj0a0dzls2jjd";
+    url = "https://downloads.haskell.org/ghc/8.8.3/ghc-${version}-src.tar.xz";
+    sha256 = "e0dcc0aaf3e234c5978f29e6df62947e97720ab404ec0158343df211c5480f89";
   };
 
   enableParallelBuilding = true;
 
   outputs = [ "out" "doc" ];
-
-  patches = [(fetchpatch rec { # https://phabricator.haskell.org/D5123
-    url = "http://tarballs.nixos.org/sha256/${sha256}";
-    name = "D5123.diff";
-    sha256 = "0nhqwdamf2y4gbwqxcgjxs0kqx23w9gv5kj0zv6450dq19rji82n";
-  })];
 
   postPatch = "patchShebangs .";
 
@@ -122,7 +119,7 @@ stdenv.mkDerivation (rec {
     export CC="${targetCC}/bin/${targetCC.targetPrefix}cc"
     export CXX="${targetCC}/bin/${targetCC.targetPrefix}cxx"
     # Use gold to work around https://sourceware.org/bugzilla/show_bug.cgi?id=16177
-    export LD="${targetCC.bintools}/bin/${targetCC.bintools.targetPrefix}ld${stdenv.lib.optionalString targetPlatform.isAarch32 ".gold"}"
+    export LD="${targetCC.bintools}/bin/${targetCC.bintools.targetPrefix}ld${stdenv.lib.optionalString (targetPlatform.isLinux && !(targetPlatform.useLLVM or false)) ".gold"}"
     export AS="${targetCC.bintools.bintools}/bin/${targetCC.bintools.targetPrefix}as"
     export AR="${targetCC.bintools.bintools}/bin/${targetCC.bintools.targetPrefix}ar"
     export NM="${targetCC.bintools.bintools}/bin/${targetCC.bintools.targetPrefix}nm"
@@ -163,7 +160,7 @@ stdenv.mkDerivation (rec {
   configureFlags = [
     "--datadir=$doc/share/doc/ghc"
     "--with-curses-includes=${ncurses.dev}/include" "--with-curses-libraries=${ncurses.out}/lib"
-  ] ++ stdenv.lib.optionals (libffi != null) ["--with-system-libffi" "--with-ffi-includes=${libffi.dev}/include" "--with-ffi-libraries=${libffi.out}/lib"
+  ] ++ stdenv.lib.optionals (libffi != null) ["--with-system-libffi" "--with-ffi-includes=${targetPackages.libffi.dev}/include" "--with-ffi-libraries=${targetPackages.libffi.out}/lib"
   ] ++ stdenv.lib.optional (targetPlatform == hostPlatform && !enableIntegerSimple) [
     "--with-gmp-includes=${targetPackages.gmp.dev}/include" "--with-gmp-libraries=${targetPackages.gmp.out}/lib"
   ] ++ stdenv.lib.optional (targetPlatform == hostPlatform && hostPlatform.libc != "glibc" && !targetPlatform.isWindows) [
@@ -176,8 +173,7 @@ stdenv.mkDerivation (rec {
     "CFLAGS=-fuse-ld=gold"
     "CONF_GCC_LINKER_OPTS_STAGE1=-fuse-ld=gold"
     "CONF_GCC_LINKER_OPTS_STAGE2=-fuse-ld=gold"
-  ] ++ stdenv.lib.optionals (targetPlatform.isDarwin && targetPlatform.isAarch64) [
-    # fix for iOS: https://www.reddit.com/r/haskell/comments/4ttdz1/building_an_osxi386_to_iosarm64_cross_compiler/d5qvd67/
+  ] ++ stdenv.lib.optionals (disableLargeAddressSpace) [
     "--disable-large-address-space"
   ];
 
@@ -195,7 +191,7 @@ stdenv.mkDerivation (rec {
   # For building runtime libs
   depsBuildTarget = toolsForTarget;
 
-  buildInputs = [ perl ] ++ (libDeps hostPlatform);
+  buildInputs = [ perl bash ] ++ (libDeps hostPlatform);
 
   propagatedBuildInputs = [ targetPackages.stdenv.cc ]
     ++ stdenv.lib.optional useLLVM llvmPackages.llvm;
@@ -222,7 +218,7 @@ stdenv.mkDerivation (rec {
       sed -i -e '2i export PATH="$PATH:${stdenv.lib.makeBinPath [ targetPackages.stdenv.cc.bintools coreutils ]}"' $i
     done
   '' + stdenv.lib.optionalString enableDwarf ''
-    wrapProgram $out/bin/ghc-8.6.5 --add-flags "-L${elfutils}/lib"
+    wrapProgram $out/bin/ghc-8.8.3 --add-flags "-L${elfutils}/lib"
     wrapProgram $out/bin/ghc --add-flags "-L${elfutils}/lib"
   '';
 
@@ -233,7 +229,7 @@ stdenv.mkDerivation (rec {
     inherit enableShared;
 
     # Our Cabal compiler name
-    haskellCompilerName = "ghc-8.6.5";
+    haskellCompilerName = "ghc-${version}";
   };
 
   meta = {

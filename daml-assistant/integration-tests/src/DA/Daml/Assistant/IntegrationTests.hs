@@ -7,7 +7,6 @@ import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
 import Control.Monad
-import Control.Monad.Fail (MonadFail)
 import qualified Data.Aeson as Aeson
 import qualified Data.Conduit.Tar.Extra as Tar.Conduit.Extra
 import qualified Data.Conduit.Zlib as Zlib

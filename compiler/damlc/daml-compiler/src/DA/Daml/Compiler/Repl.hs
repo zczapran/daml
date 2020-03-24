@@ -31,9 +31,6 @@ import Development.IDE.GHC.Util
 import Development.IDE.Types.Location
 import ErrUtils
 import GHC
-import HsExpr (Stmt, StmtLR(..), LHsExpr)
-import HsExtension (GhcPs, GhcTc)
-import HsPat (Pat(..))
 import HscTypes (HscEnv(..))
 import Language.Haskell.GhclibParserEx.Parse
 import Lexer (ParseResult(..))

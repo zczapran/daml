@@ -29,7 +29,6 @@ import qualified Data.ByteString.Lazy as BSL
 import Data.IORef
 import Data.List
 import Data.Maybe (fromMaybe)
-import DynFlags (parseDynamicFilePragma)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import Config (cProjectVersion)
