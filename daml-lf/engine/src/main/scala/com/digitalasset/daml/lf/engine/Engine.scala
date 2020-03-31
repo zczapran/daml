@@ -8,6 +8,7 @@ import com.digitalasset.daml.lf.command._
 import com.digitalasset.daml.lf.data._
 import com.digitalasset.daml.lf.data.Ref.{PackageId, ParticipantId, Party}
 import com.digitalasset.daml.lf.language.Ast._
+import com.digitalasset.daml.lf.language.LanguageVersion
 import com.digitalasset.daml.lf.speedy.Compiler
 import com.digitalasset.daml.lf.speedy.Pretty
 import com.digitalasset.daml.lf.speedy.Speedy.Machine
@@ -47,7 +48,7 @@ import com.digitalasset.daml.lf.speedy.{Command => SpeedyCommand}
   *
   * This class is thread safe as long `nextRandomInt` is.
   */
-final class Engine {
+final class Engine(config: Engine.Config) {
   private[this] val _compiledPackages: MutableCompiledPackages = ConcurrentCompiledPackages()
   private[this] val _commandTranslation: CommandPreprocessor = new CommandPreprocessor(
     _compiledPackages)
@@ -392,12 +393,26 @@ final class Engine {
 
         case SResultNeedPackage(pkgId, callback) =>
           return Result.needPackage(
-            pkgId,
-            pkg => {
-              _compiledPackages.addPackage(pkgId, pkg).flatMap {
-                case _ =>
-                  callback(_compiledPackages)
-                  interpretLoop(machine, time)
+            pkgId, { pkg =>
+              val rejectedVersion =
+                pkg.modules.collectFirst {
+                  case (_, module) if !acceptedVersion(module.languageVersion) =>
+                    module.languageVersion
+                }
+
+              rejectedVersion match {
+                case None =>
+                  _compiledPackages.addPackage(pkgId, pkg).flatMap {
+                    case _ =>
+                      callback(_compiledPackages)
+                      interpretLoop(machine, time)
+                  }
+                case Some(v) =>
+                  ResultError(
+                    Error(
+                      s"the package $pkgId contains unexpected DAML-LF $v"
+                    )
+                  )
               }
             }
           )
@@ -450,6 +465,10 @@ final class Engine {
     }
   }
 
+  private def acceptedVersion(version: LanguageVersion): Boolean =
+    LanguageVersion.ordering.gteq(config.minLFVersion, version) &&
+      LanguageVersion.ordering.gteq(version, config.maxLFVersion)
+
   def clearPackages(): Unit = _compiledPackages.clear()
 
   /** Note: it's important we return a [[com.digitalasset.daml.lf.CompiledPackages]],
@@ -470,5 +489,29 @@ final class Engine {
 }
 
 object Engine {
-  def apply(): Engine = new Engine()
+
+  case class Config(
+      minLFVersion: LanguageVersion,
+      maxLFVersion: LanguageVersion
+  )
+
+  object Config {
+    val Default = Config(
+      minLFVersion = LanguageVersion.minSupportedVersion,
+      maxLFVersion = LanguageVersion(LanguageVersion.Major.V1, LanguageVersion.Minor.Dev)
+    )
+
+    val DefaultNonDev = Config(
+      minLFVersion = LanguageVersion.minSupportedVersion,
+      maxLFVersion = LanguageVersion.maxSupportedVersion,
+    )
+
+    val DefaultSDK1 = Default.copy(
+      minLFVersion = LanguageVersion.minSDK1SupportedVersion,
+    )
+  }
+
+  def apply(): Engine = new Engine(Config.Default)
+
+  def apply(config: Config): Engine = new Engine(config)
 }

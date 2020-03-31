@@ -20,6 +20,9 @@ sealed abstract class LanguageMajorVersion(
   final val maxSupportedStableMinorVersion: LanguageMinorVersion.Stable =
     LanguageMinorVersion.Stable(stableAscending.last)
 
+  final val minSupportedStableMinorVersion: LanguageMinorVersion.Stable =
+    LanguageMinorVersion.Stable(stableAscending.head)
+
   // do *not* use implicitly unless type `LanguageMinorVersion` becomes
   // indexed by the enclosing major version's singleton type --SC
   final val minorVersionOrdering: Ordering[LanguageMinorVersion] =

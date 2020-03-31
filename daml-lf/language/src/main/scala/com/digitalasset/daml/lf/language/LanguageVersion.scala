@@ -21,6 +21,15 @@ object LanguageVersion {
   val defaultV1: LanguageVersion =
     LanguageVersion(Major.V1, Major.V1.maxSupportedStableMinorVersion)
 
+  val maxSupportedVersion =
+    LanguageVersion(Major.V1, Major.V1.maxSupportedStableMinorVersion)
+
+  val minSupportedVersion =
+    LanguageVersion(Major.V1, Major.V1.minSupportedStableMinorVersion)
+
+  val minSDK1SupportedVersion: LanguageVersion =
+    LanguageVersion(Major.V1, LanguageMinorVersion.Stable("6"))
+
   private[lf] def apply(major: LanguageMajorVersion, minor: String): LanguageVersion =
     apply(major, Minor fromProtoIdentifier minor)
 

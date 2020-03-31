@@ -28,7 +28,7 @@ private[archive] class DecodeV1(minor: LV.Minor) extends Decode.OfPackage[PLF.Pa
   override def decodePackage(
       packageId: PackageId,
       lfPackage: PLF.Package,
-      onlySerializableDataDefs: Boolean
+      onlySerializableDataDefs: Boolean,
   ): Package = {
     val internedStrings: ImmArraySeq[String] = ImmArraySeq(
       lfPackage.getInternedStringsList.asScala: _*)

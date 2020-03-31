@@ -168,5 +168,5 @@ final class StandaloneApiServer(
 }
 
 object StandaloneApiServer {
-  private val sharedEngine: Engine = Engine()
+  private val sharedEngine: Engine = Engine(Engine.Config.DefaultSDK1)
 }
