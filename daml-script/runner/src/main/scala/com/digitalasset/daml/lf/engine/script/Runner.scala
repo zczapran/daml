@@ -293,7 +293,7 @@ class Runner(
       mat: Materializer): Future[SValue] = {
     var clients = initialClients
     var machine =
-      Speedy.Machine.fromSExpr(script.expr, false, extendedCompiledPackages)
+      Speedy.Machine.fromSExpr(script.expr, false, false, extendedCompiledPackages)
 
     def stepToValue() = {
       while (!machine.isFinal) {

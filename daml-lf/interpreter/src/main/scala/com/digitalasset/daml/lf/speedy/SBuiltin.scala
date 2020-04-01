@@ -13,6 +13,7 @@ import com.digitalasset.daml.lf.language.Ast
 import com.digitalasset.daml.lf.speedy.SError._
 import com.digitalasset.daml.lf.speedy.SExpr._
 import com.digitalasset.daml.lf.speedy.Speedy.{
+  CtrlImportValue,
   CtrlValue,
   CtrlWronglyTypeContractId,
   Machine,
@@ -815,6 +816,13 @@ object SBuiltin {
         )
         .fold(err => throw DamlETransactionError(err), identity)
 
+      coid match {
+        case V.AbsoluteContractId.V1(discriminator, _) =>
+          if (machine.globalDiscriminators.contains(discriminator))
+            crash(s"The local discriminator $discriminator is not fresh within the transaction")
+        case _ =>
+      }
+
       machine.ptx = newPtx
       machine.ctrl = CtrlValue(SContractId(coid))
       checkAborted(machine.ptx)
@@ -897,101 +905,6 @@ object SBuiltin {
     }
   }
 
-  // This function translates well-typed values.
-  // Raises an exception if missing packages.
-  @throws[SpeedyHungry]
-  def translateValue(machine: Machine, value: V[V.ContractId]): CtrlValue = {
-    def go(value0: V[V.ContractId]): SValue =
-      value0 match {
-        case V.ValueList(vs) => SList(vs.map[SValue](go))
-        case V.ValueContractId(coid) => SContractId(coid)
-        case V.ValueInt64(x) => SInt64(x)
-        case V.ValueNumeric(x) => SNumeric(x)
-        case V.ValueText(t) => SText(t)
-        case V.ValueTimestamp(t) => STimestamp(t)
-        case V.ValueParty(p) => SParty(p)
-        case V.ValueBool(b) => SBool(b)
-        case V.ValueDate(x) => SDate(x)
-        case V.ValueUnit => SUnit
-        case V.ValueRecord(Some(id), fs) =>
-          val fields = Name.Array.ofDim(fs.length)
-          val values = new util.ArrayList[SValue](fields.length)
-          fs.foreach {
-            case (optk, v) =>
-              optk match {
-                case None =>
-                  throw crash("SValue.fromValue: record missing field name")
-                case Some(k) =>
-                  fields(values.size) = k
-                  val _ = values.add(go(v))
-              }
-          }
-          SRecord(id, fields, values)
-        case V.ValueRecord(None, _) =>
-          crash("SValue.fromValue: record missing identifier")
-        case V.ValueStruct(fs) =>
-          val fields = Name.Array.ofDim(fs.length)
-          val values = new util.ArrayList[SValue](fields.length)
-          fs.foreach {
-            case (k, v) =>
-              fields(values.size) = k
-              val _ = values.add(go(v))
-          }
-          SStruct(fields, values)
-        case V.ValueVariant(None, _variant @ _, _value @ _) =>
-          crash("SValue.fromValue: variant without identifier")
-        case V.ValueEnum(None, constructor @ _) =>
-          crash("SValue.fromValue: enum without identifier")
-        case V.ValueOptional(mbV) =>
-          SOptional(mbV.map(go))
-        case V.ValueTextMap(map) =>
-          STextMap(map.mapValue(go).toHashMap)
-        case V.ValueGenMap(entries) =>
-          SGenMap(
-            entries.iterator.map { case (k, v) => go(k) -> go(v) }
-          )
-        case V.ValueVariant(Some(id), variant, value) =>
-          machine.compiledPackages.getPackage(id.packageId) match {
-            case Some(pkg) =>
-              pkg.lookupIdentifier(id.qualifiedName).fold(crash, identity) match {
-                case Ast.DDataType(_, _, data: Ast.DataVariant) =>
-                  SVariant(id, variant, data.constructorRank(variant), go(value))
-                case _ =>
-                  crash(s"definition for variant $id not found")
-              }
-            case None =>
-              throw SpeedyHungry(
-                SResultNeedPackage(
-                  id.packageId,
-                  pkg => {
-                    machine.compiledPackages = pkg
-                    machine.ctrl = translateValue(machine, value)
-                  }
-                ))
-          }
-        case V.ValueEnum(Some(id), constructor) =>
-          machine.compiledPackages.getPackage(id.packageId) match {
-            case Some(pkg) =>
-              pkg.lookupIdentifier(id.qualifiedName).fold(crash, identity) match {
-                case Ast.DDataType(_, _, data: Ast.DataEnum) =>
-                  SEnum(id, constructor, data.constructorRank(constructor))
-                case _ =>
-                  crash(s"definition for variant $id not found")
-              }
-            case None =>
-              throw SpeedyHungry(
-                SResultNeedPackage(
-                  id.packageId,
-                  pkg => {
-                    machine.compiledPackages = pkg
-                    machine.ctrl = translateValue(machine, value)
-                  }
-                ))
-          }
-      }
-    CtrlValue(go(value))
-  }
-
   /** $fetch[T]
     *    :: ContractId a
     *    -> Token
@@ -1007,8 +920,11 @@ object SBuiltin {
       val coinst =
         machine.ptx
           .lookupLocalContract(coid)
-          .getOrElse(
+          .getOrElse {
             coid match {
+              case V.AbsoluteContractId.V1(d, _)
+                  if !machine.allowScenarios && !machine.globalDiscriminators.contains(d) =>
+                crash(s"sanity check fails: try to fetch an unexpected contract id $coid")
               case acoid: V.AbsoluteContractId =>
                 throw SpeedyHungry(
                   SResultNeedContract(
@@ -1016,24 +932,22 @@ object SBuiltin {
                     templateId,
                     machine.committers,
                     cbMissing = _ => machine.tryHandleException(),
-                    cbPresent = {
-                      coinst =>
-                        // Note that we cannot throw in this continuation -- instead
-                        // set the control appropriately which will crash the machine
-                        // correctly later.
-                        if (coinst.template != templateId) {
-                          machine.ctrl =
-                            CtrlWronglyTypeContractId(acoid, templateId, coinst.template)
-                        } else {
-                          machine.ctrl = translateValue(machine, coinst.arg.value)
-                        }
+                    cbPresent = { coinst =>
+                      // Note that we cannot throw in this continuation -- instead
+                      // set the control appropriately which will crash the machine
+                      // correctly later.
+                      if (coinst.template != templateId) {
+                        machine.ctrl = CtrlWronglyTypeContractId(acoid, templateId, coinst.template)
+                      } else {
+                        machine.ctrl = CtrlImportValue(coinst.arg.value)
+                      }
                     },
                   ),
                 )
               case rcoid: V.RelativeContractId =>
                 crash(s"Relative contract $rcoid ($templateId) not found from partial transaction")
             }
-          )
+          }
 
       if (coinst.template != templateId) {
         // Here we crash hard rather than throwing a "nice" error
@@ -1046,7 +960,7 @@ object SBuiltin {
         // (see below).
         crash(s"Relative contract $coid ($templateId) not found from partial transaction")
       } else {
-        machine.ctrl = translateValue(machine, coinst.arg.value)
+        CtrlImportValue(coinst.arg.value).execute(machine)
       }
     }
   }
@@ -1117,12 +1031,13 @@ object SBuiltin {
               gkey,
               machine.committers,
               cbMissing = _ => {
-                machine.ptx = machine.ptx.copy(keys = machine.ptx.keys + (gkey -> None))
+                machine.ptx = machine.ptx.addContractKey(gkey, None)
                 machine.ctrl = CtrlValue.None
                 true
               },
               cbPresent = { contractId =>
-                machine.ptx = machine.ptx.copy(keys = machine.ptx.keys + (gkey -> Some(contractId)))
+                machine.addGlobalContractIds(List(contractId))
+                machine.ptx = machine.ptx.addContractKey(gkey, Some(contractId))
                 machine.ctrl = CtrlValue(SOptional(Some(SContractId(contractId))))
               },
             ),
@@ -1188,11 +1103,12 @@ object SBuiltin {
               gkey,
               machine.committers,
               cbMissing = _ => {
-                machine.ptx = machine.ptx.copy(keys = machine.ptx.keys + (gkey -> None))
+                machine.ptx = machine.ptx.addContractKey(gkey, None)
                 machine.tryHandleException()
               },
               cbPresent = { contractId =>
-                machine.ptx = machine.ptx.copy(keys = machine.ptx.keys + (gkey -> Some(contractId)))
+                machine.addGlobalContractIds(List(contractId))
+                machine.ptx = machine.ptx.addContractKey(gkey, Some(contractId))
                 machine.ctrl = CtrlValue(SContractId(contractId))
               },
             ),
@@ -1215,16 +1131,24 @@ object SBuiltin {
   /** $beginCommit :: Party -> Token -> () */
   final case class SBSBeginCommit(optLocation: Option[Location]) extends SBuiltin(2) {
     def execute(args: util.ArrayList[SValue], machine: Machine): Unit = {
+      if (!machine.allowScenarios)
+        crash("running a scenario is not allow")
       checkToken(args.get(1))
       machine.committers = extractParties(args.get(0))
       machine.commitLocation = optLocation
       machine.ctrl = CtrlValue.Unit
+      val inputContractIds = args.asScala.foldLeft(Set.empty[V.ContractId])(
+        (acc, v) => acc ++ collectCids(SEValue(v))
+      )
+      machine.addGlobalContractIds(inputContractIds)
     }
   }
 
   /** $endCommit[mustFail?] :: result -> Token -> () */
   final case class SBSEndCommit(mustFail: Boolean) extends SBuiltin(2) {
     def execute(args: util.ArrayList[SValue], machine: Machine): Unit = {
+      if (!machine.allowScenarios)
+        crash("running a scenario is not allow")
       checkToken(args.get(1))
       if (mustFail) executeMustFail(args, machine)
       else executeCommit(args, machine)
@@ -1292,6 +1216,8 @@ object SBuiltin {
   /** $pass :: Int64 -> Token -> Timestamp */
   final case object SBSPass extends SBuiltin(2) {
     def execute(args: util.ArrayList[SValue], machine: Machine): Unit = {
+      if (!machine.allowScenarios)
+        crash("running a scenario is not allow")
       checkToken(args.get(1))
       val relTime = args.get(0) match {
         case SInt64(t) => t
@@ -1310,6 +1236,8 @@ object SBuiltin {
   /** $getParty :: Text -> Token -> Party */
   final case object SBSGetParty extends SBuiltin(2) {
     def execute(args: util.ArrayList[SValue], machine: Machine): Unit = {
+      if (!machine.allowScenarios)
+        crash("running a scenario is not allow")
       checkToken(args.get(1))
       args.get(0) match {
         case SText(name) =>

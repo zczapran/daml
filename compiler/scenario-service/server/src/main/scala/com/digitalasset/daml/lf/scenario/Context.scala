@@ -16,7 +16,6 @@ import com.digitalasset.daml.lf.speedy.Speedy
 import com.digitalasset.daml.lf.speedy.SExpr
 import com.digitalasset.daml.lf.speedy.SValue
 import com.digitalasset.daml.lf.types.Ledger.Ledger
-import com.digitalasset.daml.lf.PureCompiledPackages
 import com.digitalasset.daml.lf.speedy.SExpr.{LfDefRef, SDefinitionRef}
 import com.digitalasset.daml.lf.validation.Validation
 import com.google.protobuf.ByteString
@@ -163,10 +162,12 @@ class Context(val contextId: Context.ContextId) {
     // definition out rather than rebuilding the map.
     Speedy.Machine
       .build(
+        allowScenarios = true,
         checkSubmitterInMaintainers = VersionTimeline.checkSubmitterInMaintainers(lfVer),
         sexpr = defn,
         compiledPackages = PureCompiledPackages(allPackages, defns.mapValues(_._2)).right.get,
-        transactionSeedAndSubmissionTime = transactionSeedAndSubmissionTime
+        transactionSeedAndSubmissionTime = transactionSeedAndSubmissionTime,
+        Set.empty,
       )
   }
 

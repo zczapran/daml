@@ -143,7 +143,7 @@ object Trigger extends StrictLogging {
     val heartbeat = compiler.compile(
       ERecProj(expr.ty, Name.assertFromString("heartbeat"), expr.expr)
     )
-    var machine = Speedy.Machine.fromSExpr(heartbeat, false, compiledPackages)
+    var machine = Speedy.Machine.fromSExpr(heartbeat, false, false, compiledPackages)
     Machine.stepToValue(machine)
     machine.toSValue match {
       case SOptional(None) => Right(None)
@@ -161,7 +161,7 @@ object Trigger extends StrictLogging {
     val registeredTemplates =
       compiler.compile(ERecProj(expr.ty, Name.assertFromString("registeredTemplates"), expr.expr))
     var machine =
-      Speedy.Machine.fromSExpr(registeredTemplates, false, compiledPackages)
+      Speedy.Machine.fromSExpr(registeredTemplates, false, false, compiledPackages)
     Machine.stepToValue(machine)
     machine.toSValue match {
       case SVariant(_, "AllInDar", _, _) => {
@@ -310,7 +310,7 @@ class Runner(
       compiler.compile(
         ERecProj(trigger.expr.ty, Name.assertFromString("initialState"), trigger.expr.expr))
 
-    var machine = Speedy.Machine.fromSExpr(null, false, compiledPackages)
+    var machine = Speedy.Machine.fromSExpr(null, false, false, compiledPackages)
     val createdExpr: SExpr = SEValue(converter.fromACS(acs) match {
       case Left(err) => throw new ConverterException(err)
       case Right(x) => x

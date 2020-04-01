@@ -305,6 +305,24 @@ object Value extends CidContainer1WithDefaultCidResolver[Value] {
       }
     }
 
+  def collectCids[Cid](value: Value[Cid]): Set[Cid] = {
+    val cids = Set.newBuilder[Cid]
+    def go(value: Value[Cid]): Unit =
+      value match {
+        case _: ValueCidlessLeaf => ()
+        case ValueRecord(_, fields) => fields.foreach { case (_, v) => go(v) }
+        case ValueVariant(_, _, value) => go(value)
+        case ValueContractId(value) => cids += value
+        case ValueList(values) => values.foreach(go)
+        case ValueOptional(value) => value.foreach(go)
+        case ValueTextMap(value) => value.values.foreach(go)
+        case ValueGenMap(entries) => entries.foreach { case (k, v) => go(k); go(v) }
+        case ValueStruct(fields) => fields.foreach { case (_, v) => go(v) }
+      }
+    go(value)
+    cids.result()
+  }
+
   /** A contract instance is a value plus the template that originated it. */
   final case class ContractInst[+Val](template: Identifier, arg: Val, agreementText: String)
       extends value.CidContainer[ContractInst[Val]] {
@@ -347,9 +365,9 @@ object Value extends CidContainer1WithDefaultCidResolver[Value] {
     * to be able to use AbsoluteContractId elsewhere, so that we can
     * automatically upcast to ContractId by subtyping.
     */
-  sealed abstract class ContractId
+  sealed abstract class ContractId extends Product with Serializable
 
-  sealed abstract class AbsoluteContractId extends ContractId with Product with Serializable {
+  sealed abstract class AbsoluteContractId extends ContractId {
     def coid: String
   }
 

@@ -86,7 +86,7 @@ object PartialTransaction {
       parent: Context,
   )
 
-  def initial(seedWithTime: Option[(crypto.Hash, Time.Timestamp)] = None) =
+  def initial(seedWithTime: Option[(crypto.Hash, Time.Timestamp)]) =
     PartialTransaction(
       submissionTime = seedWithTime.map(_._2),
       nextNodeIdx = 0,
@@ -123,8 +123,10 @@ object PartialTransaction {
   *              we archive. This is not an optimization and is required for
   *              correct semantics, since otherwise lookups for keys for
   *              locally archived absolute contract ids will succeed wrongly.
+  * @param localContracts A map that associates to each contract created the
+  *                      node in which it was created.
   */
-case class PartialTransaction(
+case class PartialTransaction private (
     submissionTime: Option[Time.Timestamp],
     nextNodeIdx: Int,
     nodes: HashMap[Value.NodeId, Tx.Node],
@@ -132,7 +134,7 @@ case class PartialTransaction(
     context: PartialTransaction.Context,
     aborted: Option[Tx.TransactionError],
     keys: Map[Node.GlobalKey, Option[Value.ContractId]],
-    localContracts: Map[Value.ContractId, Value.NodeId]
+    localContracts: Map[Value.ContractId, Value.NodeId],
 ) {
 
   import PartialTransaction._
@@ -200,7 +202,7 @@ case class PartialTransaction(
     */
   def lookupLocalContract(
       lcoid: Value.ContractId,
-  ): Option[Value.ContractInst[Tx.Value[Value.ContractId]]] =
+  ): Option[Tx.ContractInst[Value.ContractId]] =
     for {
       nid <- localContracts.get(lcoid)
       node <- nodes.get(nid)
@@ -213,11 +215,17 @@ case class PartialTransaction(
       }
     } yield coinst
 
+  def addContractKey(
+      key: Node.GlobalKey,
+      contractId: Option[Value.ContractId]
+  ): PartialTransaction =
+    copy(keys = keys.updated(key, contractId))
+
   /** Extend the 'PartialTransaction' with a node for creating a
     * contract instance.
     */
   def insertCreate(
-      coinst: Value.ContractInst[Tx.Value[Value.ContractId]],
+      coinst: Tx.ContractInst[Value.ContractId],
       optLocation: Option[Location],
       signatories: Set[Party],
       stakeholders: Set[Party],

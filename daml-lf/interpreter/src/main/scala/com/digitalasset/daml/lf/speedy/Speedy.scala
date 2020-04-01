@@ -16,7 +16,7 @@ import com.digitalasset.daml.lf.value.{Value => V}
 import scala.collection.JavaConverters._
 import java.util
 
-import com.digitalasset.daml.lf.value.Value.AbsoluteContractId
+import com.digitalasset.daml.lf.language.Ast
 import org.slf4j.LoggerFactory
 
 import scala.util.control.NoStackTrace
@@ -25,6 +25,7 @@ object Speedy {
 
   /** The speedy CEK machine. */
   final case class Machine(
+      val allowScenarios: Boolean,
       /* The control is what the machine should be evaluating. */
       var ctrl: Ctrl,
       /* The enviroment: an array of values */
@@ -60,6 +61,13 @@ object Speedy {
       traceLog: TraceLog,
       /* Compiled packages (DAML-LF ast + compiled speedy expressions). */
       var compiledPackages: CompiledPackages,
+      /* The  set of all the input discriminators, that is the discriminator of
+       * the contracts IDs:
+       * - that appear in the interpreted commands,
+       * - that appear in the body of fetched contracts,
+       * - of contracts fetched by key.
+       */
+      var globalDiscriminators: Set[crypto.Hash],
       /* Flag to trace usage of get_time builtins */
       var dependsOnTime: Boolean,
   ) {
@@ -68,6 +76,18 @@ object Speedy {
     def getEnv(i: Int): SValue = env.get(env.size - i)
     def popEnv(count: Int): Unit =
       env.subList(env.size - count, env.size).clear
+
+    /** Update the global contract discriminators.
+      *  Raise an error in case of conflict with local discriminator
+      */
+    def addGlobalContractIds(discriminators: Traversable[V.ContractId]): Unit =
+      globalDiscriminators = discriminators.foldLeft(globalDiscriminators) {
+        case (acc, V.AbsoluteContractId.V1(discriminator, _)) =>
+          if (ptx.localContracts.isDefinedAt(V.AbsoluteContractId.V1(discriminator)))
+            crash(s"The local discriminator $discriminator  is not fresh within the transaction")
+          acc + discriminator
+        case (acc, _) => acc
+      }
 
     /** Push a single location to the continuation stack for the sake of
         maintaining a stack trace. */
@@ -238,6 +258,7 @@ object Speedy {
     // reinitialize the state of the machine with a new fresh submission seed.
     // Should be used only when running scenario
     def clearCommit: Unit = {
+      assert(allowScenarios)
       committers = Set.empty
       commitLocation = None
       val seedWithTime = for {
@@ -250,6 +271,7 @@ object Speedy {
         )
       } yield newSeed -> time
       ptx = PartialTransaction.initial(seedWithTime)
+      globalDiscriminators = Set.empty
     }
 
   }
@@ -259,12 +281,16 @@ object Speedy {
     private val damlTraceLog = LoggerFactory.getLogger("daml.tracelog")
 
     private def initial(
+        allowScenarios: Boolean,
         checkSubmitterInMaintainers: Boolean,
         compiledPackages: CompiledPackages,
         seedWithTime: Option[(crypto.Hash, Time.Timestamp)],
+        sexpr: SExpr,
+        globalCids: Set[V.AbsoluteContractId],
     ) =
       Machine(
-        ctrl = null,
+        allowScenarios,
+        ctrl = CtrlExpr(sexpr),
         env = emptyEnv,
         kont = new util.ArrayList[Kont](128),
         lastLocation = None,
@@ -275,35 +301,44 @@ object Speedy {
         compiledPackages = compiledPackages,
         checkSubmitterInMaintainers = checkSubmitterInMaintainers,
         validating = false,
+        globalDiscriminators = globalCids.collect {
+          case V.AbsoluteContractId.V1(discriminator, _) => discriminator
+        },
         dependsOnTime = false,
       )
 
     def newBuilder(
+        allowScenarios: Boolean,
         compiledPackages: CompiledPackages,
         submissionSeedWithTime: Option[(crypto.Hash, Time.Timestamp)] = None
     ): Either[SError, (Boolean, Expr) => Machine] = {
       val compiler = Compiler(compiledPackages.packages)
       Right({ (checkSubmitterInMaintainers: Boolean, expr: Expr) =>
         fromSExpr(
-          SEApp(compiler.compile(expr), Array(SEValue.Token)),
-          checkSubmitterInMaintainers,
-          compiledPackages,
-          submissionSeedWithTime,
+          sexpr = SEApp(compiler.compile(expr), Array(SEValue.Token)),
+          allowScenarios = allowScenarios,
+          checkSubmitterInMaintainers = checkSubmitterInMaintainers,
+          compiledPackages = compiledPackages,
+          seedWithTime = submissionSeedWithTime,
         )
       })
     }
 
     def build(
+        allowScenarios: Boolean,
         checkSubmitterInMaintainers: Boolean,
         sexpr: SExpr,
         compiledPackages: CompiledPackages,
         transactionSeedAndSubmissionTime: Option[(crypto.Hash, Time.Timestamp)] = None,
+        globalCids: Set[V.AbsoluteContractId],
     ): Machine =
       fromSExpr(
         SEApp(sexpr, Array(SEValue.Token)),
+        allowScenarios,
         checkSubmitterInMaintainers,
         compiledPackages,
         transactionSeedAndSubmissionTime,
+        globalCids
       )
 
     // Used from repl.
@@ -321,7 +356,7 @@ object Speedy {
         else
           compiler.compile(expr)
 
-      fromSExpr(sexpr, checkSubmitterInMaintainers, compiledPackages, seedWithTime)
+      fromSExpr(sexpr, true, checkSubmitterInMaintainers, compiledPackages, seedWithTime)
     }
 
     // Construct a machine from an SExpr. This is useful when you don’t have
@@ -329,12 +364,19 @@ object Speedy {
     // a token is not appropriate.
     def fromSExpr(
         sexpr: SExpr,
+        allowScenarios: Boolean,
         checkSubmitterInMaintainers: Boolean,
         compiledPackages: CompiledPackages,
         seedWithTime: Option[(crypto.Hash, Time.Timestamp)] = None,
+        globalCids: Set[V.AbsoluteContractId] = Set.empty
     ): Machine =
-      initial(checkSubmitterInMaintainers, compiledPackages, seedWithTime).copy(
-        ctrl = CtrlExpr(sexpr))
+      initial(
+        allowScenarios,
+        checkSubmitterInMaintainers,
+        compiledPackages,
+        seedWithTime,
+        sexpr,
+        globalCids)
   }
 
   /** Control specifies the thing that the machine should be reducing.
@@ -401,7 +443,7 @@ object Speedy {
     * when executing.
     */
   final case class CtrlWronglyTypeContractId(
-      acoid: AbsoluteContractId,
+      acoid: V.AbsoluteContractId,
       expected: TypeConName,
       actual: TypeConName,
   ) extends Ctrl {
@@ -413,6 +455,114 @@ object Speedy {
   object Ctrl {
     def fromPrim(prim: Prim, arity: Int): Ctrl =
       CtrlValue(SPAP(prim, new util.ArrayList[SValue](), arity))
+  }
+
+  // This translates a well-typed LF value (typically coming from
+  // the ledger) to speedy value and set the control of with the result.
+  // Additionally it collects the cid discriminators contained in the
+  // value and updates machine.globalDiscriminators accordingly.
+  // Raises an exception if
+  //  -- missing packages or
+  //  -- encounters a discriminator conflicting with a local discriminator
+  final case class CtrlImportValue(value: V[V.ContractId]) extends Ctrl {
+    override def execute(machine: Machine): Unit = {
+      val cids = Set.newBuilder[V.ContractId]
+
+      def go(value0: V[V.ContractId]): SValue =
+        value0 match {
+          case V.ValueList(vs) => SList(vs.map[SValue](go))
+          case V.ValueContractId(coid) =>
+            cids += coid
+            SContractId(coid)
+          case V.ValueInt64(x) => SInt64(x)
+          case V.ValueNumeric(x) => SNumeric(x)
+          case V.ValueText(t) => SText(t)
+          case V.ValueTimestamp(t) => STimestamp(t)
+          case V.ValueParty(p) => SParty(p)
+          case V.ValueBool(b) => SBool(b)
+          case V.ValueDate(x) => SDate(x)
+          case V.ValueUnit => SUnit
+          case V.ValueRecord(Some(id), fs) =>
+            val fields = Name.Array.ofDim(fs.length)
+            val values = new util.ArrayList[SValue](fields.length)
+            fs.foreach {
+              case (optk, v) =>
+                optk match {
+                  case None =>
+                    throw crash("SValue.fromValue: record missing field name")
+                  case Some(k) =>
+                    fields(values.size) = k
+                    val _ = values.add(go(v))
+                }
+            }
+            SRecord(id, fields, values)
+          case V.ValueRecord(None, _) =>
+            crash("SValue.fromValue: record missing identifier")
+          case V.ValueStruct(fs) =>
+            val fields = Name.Array.ofDim(fs.length)
+            val values = new util.ArrayList[SValue](fields.length)
+            fs.foreach {
+              case (k, v) =>
+                fields(values.size) = k
+                val _ = values.add(go(v))
+            }
+            SStruct(fields, values)
+          case V.ValueVariant(None, _variant @ _, _value @ _) =>
+            crash("SValue.fromValue: variant without identifier")
+          case V.ValueEnum(None, constructor @ _) =>
+            crash("SValue.fromValue: enum without identifier")
+          case V.ValueOptional(mbV) =>
+            SOptional(mbV.map(go))
+          case V.ValueTextMap(map) =>
+            STextMap(map.mapValue(go).toHashMap)
+          case V.ValueGenMap(entries) =>
+            SGenMap(
+              entries.iterator.map { case (k, v) => go(k) -> go(v) }
+            )
+          case V.ValueVariant(Some(id), variant, arg) =>
+            machine.compiledPackages.getPackage(id.packageId) match {
+              case Some(pkg) =>
+                pkg.lookupIdentifier(id.qualifiedName).fold(crash, identity) match {
+                  case Ast.DDataType(_, _, data: Ast.DataVariant) =>
+                    SVariant(id, variant, data.constructorRank(variant), go(arg))
+                  case _ =>
+                    crash(s"definition for variant $id not found")
+                }
+              case None =>
+                throw SpeedyHungry(
+                  SResultNeedPackage(
+                    id.packageId,
+                    pkg => {
+                      machine.compiledPackages = pkg
+                      machine.ctrl = this
+                    }
+                  ))
+            }
+          case V.ValueEnum(Some(id), constructor) =>
+            machine.compiledPackages.getPackage(id.packageId) match {
+              case Some(pkg) =>
+                pkg.lookupIdentifier(id.qualifiedName).fold(crash, identity) match {
+                  case Ast.DDataType(_, _, data: Ast.DataEnum) =>
+                    SEnum(id, constructor, data.constructorRank(constructor))
+                  case _ =>
+                    crash(s"definition for variant $id not found")
+                }
+              case None =>
+                throw SpeedyHungry(
+                  SResultNeedPackage(
+                    id.packageId,
+                    pkg => {
+                      machine.compiledPackages = pkg
+                      machine.ctrl = this
+                    }
+                  ))
+            }
+        }
+
+      val svalue = go(value)
+      machine.addGlobalContractIds(cids.result())
+      machine.ctrl = CtrlValue(svalue)
+    }
   }
 
   //

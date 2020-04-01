@@ -206,7 +206,13 @@ object Converter {
         SEBuiltin(SBStructCon(Name.Array(Name.assertFromString("a"), Name.assertFromString("b")))),
         Array(SEVar(2), SEVar(1))))
     val machine =
-      Speedy.Machine.fromSExpr(SEApp(SEValue(fun), Array(extractStruct)), false, compiledPackages)
+      Speedy.Machine.fromSExpr(
+        SEApp(SEValue(fun), Array(extractStruct)),
+        false,
+        false,
+        compiledPackages,
+      )
+
     @tailrec
     def iter(): Either[String, (SValue, SValue)] = {
       if (machine.isFinal) {

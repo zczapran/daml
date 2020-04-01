@@ -168,7 +168,7 @@ object Repl {
 
   case class ScenarioRunnerHelper(packages: Map[PackageId, Package]) {
     private val build = Speedy.Machine
-      .newBuilder(PureCompiledPackages(packages).right.get, nextSeedWithTime())
+      .newBuilder(true, PureCompiledPackages(packages).right.get, nextSeedWithTime())
       .fold(err => sys.error(err.toString), identity)
     def run(submissionVersion: LanguageVersion, expr: Expr)
       : (Speedy.Machine, Either[(SError, Ledger.Ledger), (Double, Int, Ledger.Ledger)]) = {

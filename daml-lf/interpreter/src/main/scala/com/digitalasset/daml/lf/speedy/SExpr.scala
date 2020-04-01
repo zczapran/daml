@@ -17,6 +17,8 @@ import com.digitalasset.daml.lf.speedy.SError._
 import com.digitalasset.daml.lf.speedy.SBuiltin._
 import java.util.ArrayList
 
+import com.digitalasset.daml.lf.value.Value
+
 /** The speedy expression:
   * - de Bruijn indexed.
   * - closure converted.
@@ -390,6 +392,76 @@ object SExpr {
           )
         )
       )
+  }
+
+  def collectCids(e: SExpr): Set[Value.ContractId] = {
+    val cids = Set.newBuilder[Value.ContractId]
+
+    def goV(e: SValue): Unit =
+      e match {
+        case SPAP(prim, args, _) =>
+          prim match {
+            case PBuiltin(_) =>
+            case PClosure(expr, closure) =>
+              goE(expr)
+              closure.foreach(goV)
+          }
+          args.forEach(goV)
+        case SRecord(_, _, values) =>
+          values.forEach(goV)
+        case SStruct(_, values) =>
+          values.forEach(goV)
+        case SVariant(_, _, _, value) =>
+          goV(value)
+        case SOptional(value) =>
+          value.foreach(goV)
+        case SList(list) =>
+          list.foreach(goV)
+        case STextMap(textMap) =>
+          textMap.values.foreach(goV)
+        case SGenMap(genMap) =>
+          genMap.foreach {
+            case (k, v) =>
+              goV(k)
+              goV(v)
+          }
+        case SContractId(cid) =>
+          cids += cid
+        case SAny(_, value) =>
+          goV(value)
+        case SEnum(_, _, _) | _: SPrimLit | STNat(_) | STypeRep(_) | SValue.SToken =>
+      }
+
+    def goE(e: SExpr): Unit =
+      e match {
+        case SEVal(_, Some((value, _))) =>
+          goV(value)
+        case SEValue(v) =>
+          goV(v)
+        case SEApp(fun, args) =>
+          goE(fun)
+          args.foreach(goE)
+        case SEAbs(_, body) =>
+          goE(body)
+        case SEMakeClo(_, _, body) =>
+          goE(body)
+        case SECase(scrut, alts) =>
+          goE(scrut)
+          alts.foreach { case SCaseAlt(_, body) => goE(body) }
+        case SELet(bounds, body) =>
+          bounds.foreach(goE)
+          goE(body)
+        case SELocation(_, expr) =>
+          goE(expr)
+        case SECatch(body, handler, fin) =>
+          goE(body)
+          goE(handler)
+          goE(fin)
+        case SEVar(_) | SEVal(_, _) | SEBuiltin(_) | SEBuiltinRecursiveDefinition(_) =>
+      }
+
+    goE(e)
+    cids.result()
   }
 
   private def prettyPrint(x: Any): String =

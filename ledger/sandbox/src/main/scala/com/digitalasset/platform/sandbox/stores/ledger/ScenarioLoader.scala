@@ -136,7 +136,7 @@ object ScenarioLoader {
       submissionVersion: LanguageVersion,
       scenarioExpr: Ast.Expr,
       compiledPackages: CompiledPackages): Speedy.Machine = {
-    Speedy.Machine.newBuilder(compiledPackages) match {
+    Speedy.Machine.newBuilder(true, compiledPackages) match {
       case Left(err) => throw new RuntimeException(s"Could not build speedy machine: $err")
       case Right(build) =>
         build(VersionTimeline.checkSubmitterInMaintainers(submissionVersion), scenarioExpr)
