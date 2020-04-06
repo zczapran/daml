@@ -74,9 +74,17 @@ simpExpr expr = case expr of
   LF.EEnumCon{enumDataCon=name} -> do
     return $ Exp.Con (Value.mkTag name) []
 
-  LF.ETupleCon{} -> todo "ETupleCon" -- Are tuple-ops ever used? I see records with fields _1,_2 etc
-  LF.ETupleProj{} -> todo "ETupleProj"
-  LF.ETupleUpd{} -> todo "ETupleUpd"
+  LF.EStructCon{structFields} -> do
+    xs <- forM structFields $ \(fieldName,expr) -> do
+      e <- simpExpr expr
+      return (fieldName,e)
+    return $ Exp.Rec xs
+
+  LF.EStructProj{structField=fieldName,structExpr} -> do
+    e <- simpExpr structExpr
+    return $ Exp.Dot e fieldName
+
+  LF.EStructUpd{} -> todo "EStructUpd"
 
   LF.ETmApp{tmappFun=func,tmappArg=arg} -> do
     f <- simpExpr func

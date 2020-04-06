@@ -27,7 +27,6 @@ da_haskell_library(
 daml_compile(
     name = "examples",
     srcs = glob(["test/daml/*.daml"]),
-    main_src = "test/daml/Examples.daml",
 )
 
 da_haskell_test(
